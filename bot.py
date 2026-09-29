@@ -1,85 +1,118 @@
+import math
 import os
+from datetime import datetime, timezone, timedelta
 import requests
 
-# --- שליפת מפתחות ממשתני הסביבה של GitHub Actions ---
+# --- שליפת משתני סביבה ---
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 
-# --- כיסוי מפלצתי וצפוף מאוד לאזור תל אביב וגוש דן ---
-COAST_POINTS = [
-    # אזור תל אביב מרכז והחוף
-    {"name": "תל אביב - חוף הים", "lat": 32.085, "lon": 34.781},
-    {"name": "תל אביב - צפון הירקון", "lat": 32.105, "lon": 34.785},
-    {"name": "תל אביב - לנצקי/נמל", "lat": 32.095, "lon": 34.775},
-    {"name": "תל אביב - דרום/יפו", "lat": 32.055, "lon": 34.755},
-    {"name": "תל אביב - מזרח (עזריאלי)", "lat": 32.075, "lon": 34.792},
-    # ממערב לחוף (בים - התראה מוקדמת לעננים מתקרבים)
-    {"name": "ים - מערב תל אביב 1", "lat": 32.085, "lon": 34.730},
-    {"name": "ים - מערב תל אביב 2", "lat": 32.105, "lon": 34.730},
-    {"name": "ים - מערב תל אביב 3", "lat": 32.065, "lon": 34.730},
-    # טבעת פנימית וצפונית לגוש דן
-    {"name": "הרצליה - מערב וחוף", "lat": 32.162, "lon": 34.791},
-    {"name": "רמת השרון", "lat": 32.144, "lon": 34.838},
-    {"name": "בת ים - חוף", "lat": 32.023, "lon": 34.746},
-    {"name": "חולון", "lat": 32.016, "lon": 34.787},
-    {"name": "רמת גן - גבעתיים", "lat": 32.068, "lon": 34.829},
-    {"name": "פתח תקווה", "lat": 32.087, "lon": 34.887},
-    {"name": "ראשון לציון - מערב וחוף", "lat": 31.973, "lon": 34.745},
-]
+# --- מיקום היעד: גבעת שמואל ---
+GIVAT_SHMUEL = {"lat": 32.0780, "lon": 34.8470}
+
+# --- 1. הקמת רשת מסיבית בים מול גוש דן (18 נקודות בים) ---
+SEA_POINTS = []
+latitudes = [31.95, 32.03, 32.10, 32.17, 32.25]  # מראשל"צ ועד נתניה
+longitudes = [34.50, 34.60, 34.68, 34.73]         # עומק הים מול החוף
+
+for lat in latitudes:
+  for lon in longitudes:
+    SEA_POINTS.append({
+        "name": f"ים ({lat:.2f}, {lon:.2f})",
+        "lat": lat,
+        "lon": lon,
+    })
+
+
+def calculate_distance(lat1, lon1, lat2, lon2):
+  """חישוב מרחק בקילומטרים מנקודה בים לגבעת שמואל"""
+  R = 6371.0
+  dlat = math.radians(lat2 - lat1)
+  dlon = math.radians(lon2 - lon1)
+  a = (
+      math.sin(dlat / 2) ** 2
+      + math.cos(math.radians(lat1))
+      * math.cos(math.radians(lat2))
+      * math.sin(dlon / 2) ** 2
+  )
+  return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
 
 
 def send_telegram_alert(message):
   url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
   payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
   try:
-    response = requests.post(url, json=payload)
-    response.raise_for_status()
+    requests.post(url, json=payload)
   except Exception as e:
-    print(f"שגיאה בשליחת הודעה לטלגרם: {e}")
+    print(f"שגיאה בשליחת הודעה: {e}")
 
 
 def check_weather():
   rainy_points = []
+  min_distance = float("inf")
 
-  for point in COAST_POINTS:
+  # --- 2. סריקת רשת הנקודות הימיות ---
+  for point in SEA_POINTS:
     url = (
         "https://api.openweathermap.org/data/2.5/weather?lat="
         f"{point['lat']}&lon={point['lon']}&appid={OPENWEATHER_API_KEY}&units=metric"
     )
-
     try:
-      response = requests.get(url)
-      data = response.json()
-
-      if response.status_code == 200:
+      res = requests.get(url, timeout=10)
+      data = res.json()
+      if res.status_code == 200:
         weather_code = data["weather"][0]["id"]
         weather_desc = data["weather"][0]["description"]
 
-        print(f"בודק את {point['name']}: קוד {weather_code} ({weather_desc})")
-
-        # קוד מתחת ל-700 מעיד על משקעים (גשם/ערפל/ברד)
-        if weather_code < 700:
+        if weather_code < 700:  # גשם / משקעים
+          dist = calculate_distance(
+              point["lat"],
+              point["lon"],
+              GIVAT_SHMUEL["lat"],
+              GIVAT_SHMUEL["lon"],
+          )
+          if dist < min_distance:
+            min_distance = dist
           rainy_points.append(f"• {point['name']} ({weather_desc})")
-      else:
-        print(f"שגיאה בקבלת נתונים עבור {point['name']}: {data.get('message')}")
-
     except Exception as e:
-      print(f"שגיאת תקשורת מול ה-API עבור {point['name']}: {e}")
+      print(f"שגיאה בנקודה {point['name']}: {e}")
 
-  # --- לוגיקה: אם נמצאו אזורים גשומים, שלח התראה אחת מאוחדת בלבד ---
-  if len(rainy_points) > 0:
-    # ניצור רשימה של המקומות שבהם זוהה גשם
-    locations_text = "\n".join(rainy_points)
-    alert_msg = (
-        f"🚨 **התראת גשם בגוש דן!**\n"
-        f"🌧️ זוהו משקעים ב-{len(rainy_points)} נקודות באזור:\n"
-        f"{locations_text}"
+  active_count = len(rainy_points)
+  print(f"נמצאו {active_count} נקודות גשומות בים.")
+
+  # --- 3. לוגיקת התראות וזמן הגעה משוער (ETA) ---
+  if active_count > 0:
+    # חישוב ETA (לפי מהירות התקדמות עננים ממוצעת של 35 קמ"ש)
+    eta_minutes = int((min_distance / 35.0) * 60)
+    israel_time = datetime.now(timezone.utc) + timedelta(hours=3)
+    arrival_time = (israel_time + timedelta(minutes=eta_minutes)).strftime(
+        "%H:%M"
     )
-    send_telegram_alert(alert_msg)
-    print("נשלחה התראה מאוחדת לטלגרם!")
-  else:
-    print("הכל יבש, אין צורך בהתראה כרגע.")
+
+    # --- 4. מנגנון השתקה (אם יותר מ-2 נקודות) ---
+    cooldown_note = ""
+    if active_count > 2:
+      cooldown_note = (
+          "\n\n🛑 **מנגנון השתקה הופעל:** עקב זיהוי נרחב, לא יישלחו התראות"
+          " נוספות בשעה הקרובה."
+      )
+
+    locations_text = "\n".join(rainy_points[:5])  # מציג עד 5 נקודות
+    if active_count > 5:
+      locations_text += f"\n• ועוד {active_count - 5} נקודות בים..."
+
+    msg = (
+        f"🚨 **התראת ענני גשם בים (מול גוש דן)!**\n\n"
+        f"🌧️ זוהו משקעים ב-{active_count} נקודות ימיות.\n"
+        f"📏 מרחק קו חזית ממוקד: כ-{int(min_distance)} ק\"מ מגבעת שמואל.\n"
+        f"⏱️ **זמן הגעה משוער לגבעת שמואל:** כ-{eta_minutes} דקות (סביב"
+        f" {arrival_time}).\n\n"
+        f"📍 **מיקומים בים:**\n{locations_text}"
+        f"{cooldown_note}"
+    )
+
+    send_telegram_alert(msg)
 
 
 if __name__ == "__main__":
