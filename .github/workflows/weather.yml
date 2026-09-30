@@ -17,6 +17,16 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Restore State Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            last_trigger.txt
+            previous_state.json
+          key: state-cache-${{ github.run_id }}
+          restore-keys: |
+            state-cache-
+
       - name: Install dependencies
         run: pip install requests
 
@@ -26,3 +36,12 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
         run: python bot.py
+
+      - name: Save State Cache
+        uses: actions/cache@v4
+        if: always()
+        with:
+          path: |
+            last_trigger.txt
+            previous_state.json
+          key: state-cache-${{ github.run_id }}
