@@ -2,9 +2,14 @@ name: Mediterranean Weather Bot
 
 on:
   schedule:
-    # כל 10 דקות (קצב עדכון המכ"ם), רק בחודשי הגשם (ינואר-אפריל ואוקטובר-דצמבר)
+    # כל 10 דקות, רק בחודשי הגשם (ינואר-אפריל ואוקטובר-דצמבר)
     - cron: '3-59/10 * * 1-4,10-12 *'
   workflow_dispatch:
+    inputs:
+      test_telegram:
+        description: 'שלח הודעת בדיקה לטלגרם'
+        type: boolean
+        default: false
 
 concurrency:
   group: rain-bot
@@ -39,7 +44,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           STATE_DIR: state
-        run: python bot.py
+        run: python bot.py ${{ inputs.test_telegram && '--test-telegram' || '' }}
 
       - name: Save state
         if: always()
