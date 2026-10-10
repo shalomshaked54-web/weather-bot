@@ -538,5 +538,10 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="בלי שליחה ובלי שמירת מצב")
     ap.add_argument("--png", help="שמירת תמונת בקרה (למשל out.png)")
+       ap.add_argument("--test-telegram", action="store_true")
     a = ap.parse_args()
+    if a.test_telegram:
+        ok = send_telegram("✅ בדיקת חיבור: בוט הגשם מחובר לטלגרם.")
+        print("ההודעה נשלחה" if ok else "השליחה נכשלה")
+        sys.exit(0 if ok else 1)
     sys.exit(run(a.dry_run, a.png))
