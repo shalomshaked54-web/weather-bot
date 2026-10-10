@@ -538,7 +538,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="בלי שליחה ובלי שמירת מצב")
     ap.add_argument("--png", help="שמירת תמונת בקרה (למשל out.png)")
-       ap.add_argument("--test-telegram", action="store_true")
+    ap.add_argument("--test-telegram", action="store_true")
     a = ap.parse_args()
     if a.test_telegram:
         ok = send_telegram("✅ בדיקת חיבור: בוט הגשם מחובר לטלגרם.")
