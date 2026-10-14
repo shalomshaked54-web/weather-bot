@@ -2,8 +2,8 @@ name: Mediterranean Weather Bot
 
 on:
   schedule:
-    # כל 10 דקות, רק בחודשי הגשם (ינואר-אפריל ואוקטובר-דצמבר)
-    - cron: '3-59/10 * * 1-4,10-12 *'
+    # כל 5 דקות, רק בחודשי הגשם (ינואר-אפריל ואוקטובר-דצמבר)
+    - cron: '2-59/5 * * 1-4,10-12 *'
   workflow_dispatch:
     inputs:
       test_telegram:
