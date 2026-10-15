@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-בוט התראות גשם לגבעת שמואל - גרסה 2.4 (מבוסס מכ"ם)
+בוט התראות גשם לגבעת שמואל - גרסה 2.5 בטא (מבוסס מכ"ם)
 
 זרימה:
   1. מושך מ-RainViewer את 4 פריימי המכ"ם האחרונים (10 דקות בין פריים לפריים).
@@ -45,6 +45,7 @@ STATE_FILE = os.path.join(STATE_DIR, "state.json")
 HISTORY_FILE = os.path.join(STATE_DIR, "history.jsonl")
 HISTORY_MAX_LINES = 3000
 
+VERSION = "2.5-beta"
 TZ = ZoneInfo("Asia/Jerusalem")
 
 TARGET_LAT, TARGET_LON = 32.0780, 34.8470
@@ -85,6 +86,12 @@ IMMINENT_MIN = 20        # התראה "מגיע עכשיו" כש-ETA <= 20 דק�
 MIN_SCORE = 2            # 0-3. 3 = גבוהה, 2 = בינונית. כדאי להעלות ל-3 אם יש יותר מדי התראות
 MIN_ALERT_AREA_KM2 = 100.0
 PERSIST_MIN_CELLS = 3 * MIN_CELLS
+
+# "גשם בסביבה": גשם קל שכבר קרוב לגבעה, בלי קשר לתנועה (תופס תאים מקומיים שהחיזוי מפספס)
+NEAR_ENABLED = False   # כבוי כברירת מחדל; True מפעיל התראה על גשם קל קרוב (יותר התראות)
+NEAR_THRESH_DBZ = 15.0   # נמוך מהסף הכללי, בכוונה, ורק קרוב לגבעה
+NEAR_RADIUS_KM = 8.0
+NEAR_MIN_CELLS = 3       # ~12 קמ"ר
 COOLDOWN_MIN = 90        # חזרה על אותו שלב באותו אירוע
 EPISODE_GAP_MIN = 60     # בלי גשם חזוי/קיים כל כך הרבה זמן = אירוע חדש
 
@@ -319,6 +326,19 @@ def analyze(fields, times):
     res = {"rain_cells": int((latest > 0).sum()), "stage": None, "motion": None,
            "eta": None, "score": 0, "checks": {}}
 
+    dist = np.hypot(XX, YY)
+    raw = fields[-1]
+
+    def nearest(field, thr):
+        m = field >= thr
+        return round(float(dist[m].min()), 1) if m.any() else None
+
+    # נתוני אבחון שנשמרים בלוג (איפה בדיוק הגשם ומה העוצמה)
+    res["diag"] = {"nearest_km": nearest(latest, THRESH_DBZ),
+                   "nearest15_km": nearest(raw, NEAR_THRESH_DBZ),
+                   "max_dbz_10km": round(float(raw[dist <= 10].max()), 1),
+                   "cells_20km": int(((latest > 0) & (dist <= 20)).sum())}
+
     now_mask = disc(0, 0, NOW_RADIUS_KM)
     if (latest[now_mask] > 0).any():
         res["stage"] = "now"
@@ -357,6 +377,18 @@ def analyze(fields, times):
             "persist": persistent >= 3,
         }
         res["score"] = sum(res["checks"].values())
+
+    # גשם קל קרוב, בלי קשר לתנועה: ב-2 מתוך 3 הפריימים האחרונים לפחות
+    if NEAR_ENABLED and res["stage"] is None:
+        near = dist <= NEAR_RADIUS_KM
+        counts = [int((f[near] >= NEAR_THRESH_DBZ).sum()) for f in fields[-3:]]
+        frames_with = sum(1 for c in counts if c >= NEAR_MIN_CELLS)
+        if counts[-1] >= NEAR_MIN_CELLS and frames_with >= 2:
+            res["stage"] = "near"
+            res["peak_dbz"] = float(raw[near].max())
+            res["front_km"] = nearest(raw, NEAR_THRESH_DBZ)
+            res["score"] = 3 if frames_with == 3 else 2
+            res["checks"] = {}
     return res
 
 
@@ -396,7 +428,7 @@ def parse_ts(s):
         return None
 
 
-STAGE_RANK = {"early": 1, "imminent": 2, "now": 3}
+STAGE_RANK = {"early": 1, "near": 2, "imminent": 3, "now": 4}
 
 
 def should_send(state, stage, now):
@@ -416,9 +448,12 @@ def build_message(res, radar_time, now):
     age_min = max(0.0, (now - radar_time).total_seconds() / 60.0)
     headline = {"early": "🌧️ <b>גשם בדרך לגבעת שמואל</b>",
                 "imminent": "⚠️ <b>הגשם מגיע - בעוד דקות ספורות</b>",
+                "near": "🌦️ <b>גשם קל בסביבת גבעת שמואל</b>",
                 "now": "☔ <b>יורד גשם באזור גבעת שמואל</b>"}[res["stage"]]
     lines = [headline, ""]
-    if res["stage"] != "now":
+    if res["stage"] == "near":
+        lines.append(f"📏 <b>הגשם הקרוב ביותר:</b> כ-{res['front_km']:.0f} ק\"מ מהגבעה")
+    elif res["stage"] != "now":
         lo, hi = (max(0, int(round(x - age_min))) for x in res["eta"])
         eta = f"כ-<b>{lo} דקות</b>" if abs(hi - lo) < 5 else f"כ-<b>{lo}-{hi} דקות</b>"
         arrival = (now + timedelta(minutes=(lo + hi) / 2)).strftime("%H:%M")
@@ -430,9 +465,12 @@ def build_message(res, radar_time, now):
     lines.append(f"💧 <b>עוצמה:</b> {intensity_label(dbz)} (~{dbz_to_mmh(dbz):.1f} מ\"מ/ש')")
     conf = {3: "גבוהה 🟢", 2: "בינונית 🟡"}.get(res["score"], "נמוכה 🔴")
     ok = res["checks"]
-    lines.append(f"🎯 <b>ודאות:</b> {conf}  "
-                 f"(תנועה {'✓' if ok['motion'] else '✗'} · גודל {'✓' if ok['size'] else '✗'} · "
-                 f"יציבות {'✓' if ok['persist'] else '✗'})")
+    if ok:
+        lines.append(f"🎯 <b>ודאות:</b> {conf}  "
+                     f"(תנועה {'✓' if ok['motion'] else '✗'} · גודל {'✓' if ok['size'] else '✗'} · "
+                     f"יציבות {'✓' if ok['persist'] else '✗'})")
+    else:
+        lines.append(f"🎯 <b>ודאות:</b> {conf}  (גשם שנצפה בכמה פריימים רצופים, לא חיזוי)")
     lines += ["", f"🛰️ <i>פריים מכ\"ם: {radar_time.strftime('%H:%M')} · "
                   f"<a href=\"https://www.rainviewer.com\">Weather data by Rain Viewer</a></i>"]
     return "\n".join(lines)
@@ -519,9 +557,11 @@ def run(dry_run=False, png=None):
             sent = send_telegram(msg)
 
     m = res["motion"]
-    summary = {"t": now.isoformat(timespec="seconds"), "radar": radar_time.isoformat(timespec="seconds"),
+    summary = {"v": VERSION, "t": now.isoformat(timespec="seconds"), "radar": radar_time.isoformat(timespec="seconds"),
                "rain_cells": res["rain_cells"], "stage": stage, "eta": res["eta"], "score": res["score"],
-               "speed": round(m["speed"], 1) if m else None, "sent": sent}
+               "speed": round(m["speed"], 1) if m else None,
+               "heading": round(math.degrees(math.atan2(m["vx"], m["vy"])) % 360) if m else None,
+               **res["diag"], "sent": sent}
     print(json.dumps(summary, ensure_ascii=False))
 
     if not dry_run:
@@ -538,10 +578,10 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="בלי שליחה ובלי שמירת מצב")
     ap.add_argument("--png", help="שמירת תמונת בקרה (למשל out.png)")
-    ap.add_argument("--test-telegram", action="store_true")
+    ap.add_argument("--test-telegram", action="store_true", help="שולח הודעת בדיקה אחת וסיים")
     a = ap.parse_args()
     if a.test_telegram:
-        ok = send_telegram("✅ בדיקת חיבור: בוט הגשם מחובר לטלגרם.")
+        ok = send_telegram(f"✅ בדיקת חיבור: בוט הגשם {VERSION} מחובר לטלגרם.")
         print("ההודעה נשלחה" if ok else "השליחה נכשלה")
         sys.exit(0 if ok else 1)
     sys.exit(run(a.dry_run, a.png))
