@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-בוט התראות גשם לגבעת שמואל - גרסה 2.5 בטא (מבוסס מכ"ם)
+בוט התראות גשם לגבעת שמואל - גרסה 2.6 בטא (מבוסס מכ"ם)
 
 זרימה:
   1. מושך מ-RainViewer את 4 פריימי המכ"ם האחרונים (10 דקות בין פריים לפריים).
@@ -11,7 +11,10 @@
   3. מנקה רעש (אשכולות קטנים), מעריך וקטור תנועה גלובלי בין הפריימים
      (cross-correlation) ו"מריץ אחורה" את השדה כדי לחשב מתי הגשם מגיע.
   4. מחשב ודאות לפי עקביות התנועה, גודל האשכול ויציבות ההד לאורך זמן.
-  5. שולח התראה בטלגרם לפי שלבים (early / imminent / now), פעם אחת לכל אירוע.
+  5. מסלול תאים (חדש ב-2.6): תאי גשם קטנים נעקבים בנפרד בין פריימים, על השדה
+     הגולמי (בלי מחיקת תאים קטנים), ומקבלים וקטור תנועה וזמן הגעה משלהם.
+  6. שולח התראה בטלגרם עם תמונת מכ"ם, לפי שלבים (early / imminent / now),
+     פעם אחת לכל אירוע. מסלול המערכות (ים) מחמיר, מסלול התאים קצר ורגיש יותר.
 
 שימוש:
   python bot.py                 # ריצה רגילה
@@ -41,11 +44,12 @@ from PIL import Image, ImageDraw
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 STATE_DIR = os.environ.get("STATE_DIR", "state")
+OUT_DIR = os.environ.get("OUT_DIR", "out")   # תמונות התראה / חשד לפספוס (מועלות כ-artifact)
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
 HISTORY_FILE = os.path.join(STATE_DIR, "history.jsonl")
 HISTORY_MAX_LINES = 3000
 
-VERSION = "2.5-beta"
+VERSION = "2.6-beta"
 TZ = ZoneInfo("Asia/Jerusalem")
 
 TARGET_LAT, TARGET_LON = 32.0780, 34.8470
@@ -65,7 +69,7 @@ Y_RANGE = (-80.0, 80.0)
 KM_PER_DEG = 111.195
 
 # זיהוי גשם
-THRESH_DBZ = 20.0       # ~0.65 מ"מ/ש' - "גשם קל, יותר מטפטוף"
+THRESH_DBZ = 20.0       # ~0.65 מ"מ/שעה - "גשם קל, יותר מטפטוף"
 MIN_CLUSTER_KM2 = 20.0  # אשכול קטן מזה נחשב רעש
 MIN_CELLS = int(MIN_CLUSTER_KM2 / CELL_KM ** 2)
 
@@ -80,18 +84,32 @@ BASE_RADIUS_KM = 5.0     # רדיוס "פגיעה" סביב הגבעה
 SPREAD_PER_KM = 0.08     # הרדיוס גדל עם המרחק (אי-ודאות בכיוון)
 SPEED_UNCERTAINTY = (1.25, 0.8)  # טווח ETA: מהיר / איטי
 
-# התראות
-EARLY_MIN = 60           # התראה מוקדמת כש-ETA <= 60 דקות
+# התראות - מסלול המערכות (גשם שמגיע מהים). מחמיר, לפי ניתוח ההתראות של 2.5:
+# כל התראות ציון 2 וכל התראות early עם ETA של 45+ דקות נכשלו.
+EARLY_MIN = 45           # התראה מוקדמת כש-ETA <= 45 דקות (היה 60)
 IMMINENT_MIN = 20        # התראה "מגיע עכשיו" כש-ETA <= 20 דקות
-MIN_SCORE = 2            # 0-3. 3 = גבוהה, 2 = בינונית. כדאי להעלות ל-3 אם יש יותר מדי התראות
+MIN_SCORE_SYSTEM = 3     # 0-3. נדרש 3 (גבוהה) למסלול המערכות (היה 2)
 MIN_ALERT_AREA_KM2 = 100.0
 PERSIST_MIN_CELLS = 3 * MIN_CELLS
+STAGE_RANK = {"early": 1, "imminent": 2, "now": 3}
 
-# "גשם בסביבה": גשם קל שכבר קרוב לגבעה, בלי קשר לתנועה (תופס תאים מקומיים שהחיזוי מפספס)
-NEAR_ENABLED = False   # כבוי כברירת מחדל; True מפעיל התראה על גשם קל קרוב (יותר התראות)
-NEAR_THRESH_DBZ = 15.0   # נמוך מהסף הכללי, בכוונה, ורק קרוב לגבעה
-NEAR_RADIUS_KM = 8.0
-NEAR_MIN_CELLS = 3       # ~12 קמ"ר
+# מסלול תאים (חדש ב-2.6): תאים קטנים וקומפקטיים קרוב לגבעה, נעקבים על השדה הגולמי
+CELL_ZONE_KM = 60.0       # מחוץ לטווח הזה התאים שייכים למסלול המערכות
+CELL_MIN_DBZ = 15.0       # סף לזיהוי גבולות התא
+CELL_PEAK_DBZ = 22.0      # עוצמת שיא מינימלית כדי להתריע (~0.9 מ"מ/שעה)
+CELL_MIN_CELLS = 3        # שטח מינימלי ~12 קמ"ר (נגד רעש של פיקסל בודד)
+CELL_MAX_CELLS = 60       # גדול מזה = מערכת, לא תא
+CELL_MAX_ETA_MIN = 30     # מעבר לזה אין התראת תא (המערכות מטופלות במסלול האחר)
+CELL_MAX_SPEED_KMH = 90.0 # מגבלת התאמה בין פריימים
+CELL_MIN_APPROACH_KMH = 5.0
+CELL_HIT_BASE_KM = 4.0    # "פגיעה": מרחק מסלול התא מהגבעה <= רדיוס התא + זה + תוספת
+CELL_HIT_SPREAD = 0.10    # תוספת אי-ודאות לפי המרחק
+MIN_SCORE_CELL = 2        # תא שנצפה בשני פריימים = 2, שלושה פריימים עקביים = 3
+
+# חשד לפספוס: הד קרוב בלי התראה => נשמרת תמונה לבדיקה
+SUSPICIOUS_RADIUS_KM = 10.0
+SUSPICIOUS_MIN_CELLS = 2
+SUSPICIOUS_MIN_DBZ = 20.0
 COOLDOWN_MIN = 90        # חזרה על אותו שלב באותו אירוע
 EPISODE_GAP_MIN = 60     # בלי גשם חזוי/קיים כל כך הרבה זמן = אירוע חדש
 
@@ -314,8 +332,8 @@ def intensity_label(dbz):
     return "🌦️ קל"
 
 
-def analyze(fields, times):
-    """הליבה: שדות dBZ גולמיים (ישן->חדש) וזמנים -> תוצאה מובנית"""
+def analyze_system(fields, times):
+    """מסלול המערכות: שדות dBZ גולמיים (ישן->חדש) וזמנים -> תוצאה מובנית"""
     cleaned, labels, sizes = [], None, None
     for f in fields:
         c, lab, sz = clean_field(f)
@@ -335,9 +353,10 @@ def analyze(fields, times):
 
     # נתוני אבחון שנשמרים בלוג (איפה בדיוק הגשם ומה העוצמה)
     res["diag"] = {"nearest_km": nearest(latest, THRESH_DBZ),
-                   "nearest15_km": nearest(raw, NEAR_THRESH_DBZ),
+                   "nearest15_km": nearest(raw, CELL_MIN_DBZ),
                    "max_dbz_10km": round(float(raw[dist <= 10].max()), 1),
-                   "cells_20km": int(((latest > 0) & (dist <= 20)).sum())}
+                   "cells_20km": int(((latest > 0) & (dist <= 20)).sum()),
+                   "raw20_10km": int(((raw >= SUSPICIOUS_MIN_DBZ) & (dist <= SUSPICIOUS_RADIUS_KM)).sum())}
 
     now_mask = disc(0, 0, NOW_RADIUS_KM)
     if (latest[now_mask] > 0).any():
@@ -378,17 +397,155 @@ def analyze(fields, times):
         }
         res["score"] = sum(res["checks"].values())
 
-    # גשם קל קרוב, בלי קשר לתנועה: ב-2 מתוך 3 הפריימים האחרונים לפחות
-    if NEAR_ENABLED and res["stage"] is None:
-        near = dist <= NEAR_RADIUS_KM
-        counts = [int((f[near] >= NEAR_THRESH_DBZ).sum()) for f in fields[-3:]]
-        frames_with = sum(1 for c in counts if c >= NEAR_MIN_CELLS)
-        if counts[-1] >= NEAR_MIN_CELLS and frames_with >= 2:
-            res["stage"] = "near"
-            res["peak_dbz"] = float(raw[near].max())
-            res["front_km"] = nearest(raw, NEAR_THRESH_DBZ)
-            res["score"] = 3 if frames_with == 3 else 2
-            res["checks"] = {}
+    return res
+
+
+# ------------------------------------------------------------------ מסלול תאים
+
+def extract_cells(field):
+    """תאי גשם קומפקטיים מהשדה הגולמי. תא קטן וחזק לא נמחק כמו במסלול המערכות"""
+    labels, sizes = label_clusters(field >= CELL_MIN_DBZ)
+    cells = []
+    for lab in range(1, len(sizes)):
+        n = int(sizes[lab])
+        if n < CELL_MIN_CELLS or n > CELL_MAX_CELLS:
+            continue
+        m = labels == lab
+        x, y = float(XX[m].mean()), float(YY[m].mean())
+        if math.hypot(x, y) > CELL_ZONE_KM:
+            continue
+        cells.append({"x": x, "y": y, "area": n, "peak": float(field[m].max()),
+                      "r": math.sqrt(n * CELL_KM ** 2 / math.pi)})
+    return cells
+
+
+def track_cells(cells_pf, times):
+    """מחבר תאים בין פריימים עוקבים (הקרוב ביותר קודם). מחזיר מסלולים שמסתיימים בפריים האחרון"""
+    tracks, prev_map = [], {}
+    for i in range(len(cells_pf)):
+        cur_map = {}
+        if i > 0:
+            gate = CELL_MAX_SPEED_KMH * (times[i] - times[i - 1]) / 3600.0
+            prev, cells = cells_pf[i - 1], cells_pf[i]
+            pairs = sorted((math.hypot(c["x"] - p["x"], c["y"] - p["y"]), ci, pi)
+                           for ci, c in enumerate(cells) for pi, p in enumerate(prev))
+            used_c, used_p = set(), set()
+            for d, ci, pi in pairs:
+                if d > gate:
+                    break
+                if ci in used_c or pi in used_p:
+                    continue
+                used_c.add(ci)
+                used_p.add(pi)
+                tr = prev_map.get(pi)
+                if tr is None:
+                    tr = [(i - 1, prev[pi])]
+                    tracks.append(tr)
+                tr.append((i, cells[ci]))
+                cur_map[ci] = tr
+        prev_map = cur_map
+    last = len(cells_pf) - 1
+    return [t for t in tracks if t[-1][0] == last]
+
+
+def evaluate_track(tr, times):
+    """בודק מסלול תא אחד. info["why"] הוא None אם התא מתאים להתראה, אחרת סיבת הדחייה"""
+    (i0, c0), (i1, c1) = tr[0], tr[-1]
+    dt_h = (times[i1] - times[i0]) / 3600.0
+    vx, vy = (c1["x"] - c0["x"]) / dt_h, (c1["y"] - c0["y"]) / dt_h
+    speed = math.hypot(vx, vy)
+    dist = math.hypot(c1["x"], c1["y"])
+    info = {"why": None, "dist": dist, "peak": c1["peak"], "area": c1["area"], "n": len(tr),
+            "speed": speed, "vx": vx, "vy": vy, "r": c1["r"], "eta_min": None}
+    if c1["peak"] < CELL_PEAK_DBZ:
+        info["why"] = "weak"
+        return info
+    if speed < CELL_MIN_APPROACH_KMH:
+        info["why"] = "still"
+        return info
+    if dist <= c1["r"] + NOW_RADIUS_KM:
+        info["eta_min"] = 0.0                      # התא כבר מעל הגבעה
+    else:
+        approach = -(c1["x"] * vx + c1["y"] * vy) / dist
+        if approach < CELL_MIN_APPROACH_KMH:
+            info["why"] = "away"
+            return info
+        along = -(c1["x"] * vx + c1["y"] * vy) / speed      # מרחק לאורך הכיוון עד הנקודה הקרובה
+        d_min = math.sqrt(max(dist ** 2 - along ** 2, 0.0))
+        if d_min > c1["r"] + CELL_HIT_BASE_KM + CELL_HIT_SPREAD * dist:
+            info["why"] = "miss"
+            return info
+        chord = math.sqrt(max(c1["r"] ** 2 - d_min ** 2, 0.0))
+        info["eta_min"] = 60.0 * max(0.0, along - chord) / speed
+        if info["eta_min"] > CELL_MAX_ETA_MIN:
+            info["why"] = "far"
+            return info
+    # ציון: 3 אם המסלול נצפה ב-3+ פריימים והתנועה האחרונה תואמת לכללית
+    info["score"] = 2
+    if len(tr) >= 3:
+        (ia, ca), (ib, cb) = tr[-2], tr[-1]
+        h = (times[ib] - times[ia]) / 3600.0
+        lx, ly = (cb["x"] - ca["x"]) / h, (cb["y"] - ca["y"]) / h
+        ls = math.hypot(lx, ly)
+        ang = abs((math.degrees(math.atan2(lx, ly) - math.atan2(vx, vy)) + 180) % 360 - 180)
+        if abs(ls - speed) <= max(8.0, 0.4 * speed) and (ls < 10.0 or ang <= 45.0):
+            info["score"] = 3
+    return info
+
+
+def analyze_cells(fields, times):
+    """מסלול התאים: מחזיר {"alert": התראה או None, "dbg": סיכום ללוג, "draw": תאים לציור}"""
+    cells_pf = [extract_cells(f) for f in fields]
+    out = {"alert": None, "dbg": None, "draw": []}
+    latest = cells_pf[-1]
+    if not latest:
+        return out
+    tracks = track_cells(cells_pf, times)
+    infos = [evaluate_track(t, times) for t in tracks]
+    tracked_ids = {id(t[-1][1]) for t in tracks}
+    out["draw"] = ([{"x": i["x"], "y": i["y"], "r": i["r"], "vx": i["vx"], "vy": i["vy"]}
+                    for i in ({**inf, "x": t[-1][1]["x"], "y": t[-1][1]["y"]} for inf, t in zip(infos, tracks))]
+                   + [{"x": c["x"], "y": c["y"], "r": c["r"], "vx": None, "vy": None}
+                      for c in latest if id(c) not in tracked_ids])
+    good = [i for i in infos if i["why"] is None]
+    if good:
+        best = min(good, key=lambda i: i["eta_min"])
+        eta = best["eta_min"]
+        lo, hi = int(round(eta / SPEED_UNCERTAINTY[0])), int(round(eta / SPEED_UNCERTAINTY[1]))
+        out["alert"] = {"stage": "now" if eta == 0 else ("imminent" if eta <= IMMINENT_MIN else "early"),
+                        "eta": (lo, hi), "eta_mid": int(round(eta)), "score": best["score"],
+                        "dist": best["dist"], "edge_km": max(0.0, best["dist"] - best["r"]),
+                        "peak": best["peak"], "area_km2": best["area"] * CELL_KM ** 2,
+                        "vx": best["vx"], "vy": best["vy"], "speed": best["speed"], "n": best["n"]}
+        out["dbg"] = {"why": "ok", "d": round(best["dist"], 1), "pk": round(best["peak"]), "n": best["n"],
+                      "v": round(best["speed"])}
+        return out
+    if infos:
+        near = min(infos, key=lambda i: i["dist"])
+        out["dbg"] = {"why": near["why"], "d": round(near["dist"], 1), "pk": round(near["peak"]),
+                      "n": near["n"], "v": round(near["speed"])}
+    else:
+        c = min(latest, key=lambda c: math.hypot(c["x"], c["y"]))
+        out["dbg"] = {"why": "no_track", "d": round(math.hypot(c["x"], c["y"]), 1), "pk": round(c["peak"]),
+                      "n": 1, "v": None}
+    return out
+
+
+def analyze(fields, times):
+    """מאחד את שני המסלולים. התראה נשלחת אם qualifies(res)"""
+    res = analyze_system(fields, times)
+    res.update(src="system" if res["stage"] else None, min_score=MIN_SCORE_SYSTEM,
+               motion_used=res["motion"], cell=None)
+    cell = analyze_cells(fields, times)
+    res["cell_dbg"], res["cell_draw"] = cell["dbg"], cell["draw"]
+    c = cell["alert"]
+    if c:
+        sys_ok = res["stage"] is not None and res["score"] >= MIN_SCORE_SYSTEM
+        if not sys_ok or STAGE_RANK[c["stage"]] > STAGE_RANK[res["stage"]]:
+            res.update(src="cell", stage=c["stage"], eta=c["eta"], eta_mid=c["eta_mid"],
+                       front_km=c["edge_km"], peak_dbz=c["peak"], cluster_km2=c["area_km2"],
+                       score=c["score"], checks={}, min_score=MIN_SCORE_CELL, cell=c,
+                       motion_used={"vx": c["vx"], "vy": c["vy"], "speed": c["speed"]})
     return res
 
 
@@ -428,9 +585,6 @@ def parse_ts(s):
         return None
 
 
-STAGE_RANK = {"early": 1, "near": 2, "imminent": 3, "now": 4}
-
-
 def should_send(state, stage, now):
     last = parse_ts(state.get("last_alert"))
     if last is None:
@@ -443,34 +597,42 @@ def should_send(state, stage, now):
     return now - last >= timedelta(minutes=COOLDOWN_MIN)
 
 
+def qualifies(res):
+    return res["stage"] is not None and res["score"] >= res["min_score"]
+
+
 def build_message(res, radar_time, now):
-    m = res["motion"]
+    src = res.get("src") or "system"
+    m = res.get("motion_used")
     age_min = max(0.0, (now - radar_time).total_seconds() / 60.0)
-    headline = {"early": "🌧️ <b>גשם בדרך לגבעת שמואל</b>",
-                "imminent": "⚠️ <b>הגשם מגיע - בעוד דקות ספורות</b>",
-                "near": "🌦️ <b>גשם קל בסביבת גבעת שמואל</b>",
-                "now": "☔ <b>יורד גשם באזור גבעת שמואל</b>"}[res["stage"]]
-    lines = [headline, ""]
-    if res["stage"] == "near":
-        lines.append(f"📏 <b>הגשם הקרוב ביותר:</b> כ-{res['front_km']:.0f} ק\"מ מהגבעה")
-    elif res["stage"] != "now":
+    if src == "cell":
+        headlines = {"early": "🌧️ <b>תא גשם מתקרב לגבעת שמואל</b>",
+                     "imminent": "⚠️ <b>תא גשם מגיע - בעוד דקות ספורות</b>",
+                     "now": "☔ <b>תא גשם מעל גבעת שמואל</b>"}
+    else:
+        headlines = {"early": "🌧️ <b>גשם בדרך לגבעת שמואל</b>",
+                     "imminent": "⚠️ <b>הגשם מגיע - בעוד דקות ספורות</b>",
+                     "now": "☔ <b>יורד גשם באזור גבעת שמואל</b>"}
+    lines = [headlines[res["stage"]], ""]
+    if res["stage"] != "now":
         lo, hi = (max(0, int(round(x - age_min))) for x in res["eta"])
         eta = f"כ-<b>{lo} דקות</b>" if abs(hi - lo) < 5 else f"כ-<b>{lo}-{hi} דקות</b>"
         arrival = (now + timedelta(minutes=(lo + hi) / 2)).strftime("%H:%M")
         frm = compass((math.degrees(math.atan2(m["vx"], m["vy"])) + 180) % 360)
+        label = "מרחק התא" if src == "cell" else "קצה החזית"
         lines += [f"⏱️ <b>זמן הגעה:</b> {eta} (סביב {arrival})",
                   f"🧭 <b>מגיע מכיוון:</b> {frm}, ~{m['speed']:.0f} קמ\"ש",
-                  f"📏 <b>קצה החזית:</b> כ-{res['front_km']:.0f} ק\"מ מהגבעה"]
+                  f"📏 <b>{label}:</b> כ-{res['front_km']:.0f} ק\"מ מהגבעה"]
     dbz = res.get("peak_dbz", THRESH_DBZ)
-    lines.append(f"💧 <b>עוצמה:</b> {intensity_label(dbz)} (~{dbz_to_mmh(dbz):.1f} מ\"מ/ש')")
+    lines.append(f"💧 <b>עוצמה:</b> {intensity_label(dbz)} (~{dbz_to_mmh(dbz):.1f} מ\"מ/שעה)")
     conf = {3: "גבוהה 🟢", 2: "בינונית 🟡"}.get(res["score"], "נמוכה 🔴")
     ok = res["checks"]
-    if ok:
+    if src == "cell":
+        lines.append(f"🎯 <b>ודאות:</b> {conf}  (תא שנצפה ב-{res['cell']['n']} פריימים רצופים · התראה קצרה)")
+    elif ok:
         lines.append(f"🎯 <b>ודאות:</b> {conf}  "
                      f"(תנועה {'✓' if ok['motion'] else '✗'} · גודל {'✓' if ok['size'] else '✗'} · "
                      f"יציבות {'✓' if ok['persist'] else '✗'})")
-    else:
-        lines.append(f"🎯 <b>ודאות:</b> {conf}  (גשם שנצפה בכמה פריימים רצופים, לא חיזוי)")
     lines += ["", f"🛰️ <i>פריים מכ\"ם: {radar_time.strftime('%H:%M')} · "
                   f"<a href=\"https://www.rainviewer.com\">Weather data by Rain Viewer</a></i>"]
     return "\n".join(lines)
@@ -491,28 +653,74 @@ def send_telegram(message):
         return False
 
 
-# ------------------------------------------------------------------ תמונת בקרה
+def send_telegram_photo(png_bytes, caption=""):
+    """שולח תמונה עם כיתוב. מחזיר False גם אם הכיתוב ארוך מדי, ואז שולחים הודעת טקסט רגילה"""
+    if len(caption) > 1000:
+        return False
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+    data = {"chat_id": TELEGRAM_CHAT_ID}
+    if caption:
+        data.update(caption=caption, parse_mode="HTML")
+    try:
+        res = requests.post(url, data=data, files={"photo": ("radar.png", png_bytes, "image/png")}, timeout=20)
+        if res.status_code != 200:
+            print(f"שגיאה בשליחת תמונה לטלגרם: {res.status_code} {res.text[:200]}")
+            return False
+        return True
+    except requests.RequestException as e:
+        print(f"שגיאה בשליחת תמונה לטלגרם: {type(e).__name__}")
+        return False
 
-def save_png(field, res, path, scale=6):
-    ny, nx = field.shape
-    rgb = np.zeros((ny, nx, 3), np.uint8)
-    for lo, col in [(THRESH_DBZ, (80, 170, 255)), (30, (60, 220, 90)), (38, (255, 220, 0)),
-                    (45, (255, 90, 0)), (55, (255, 0, 160))]:
-        rgb[field >= lo] = col
+
+# ------------------------------------------------------------------ תמונת מכ"ם
+
+# קו חוף משוער (קו רוחב, קו אורך), רק לכיוון בתמונה
+COAST = [(32.82, 34.99), (32.69, 34.94), (32.50, 34.89), (32.33, 34.85), (32.17, 34.79),
+         (32.08, 34.76), (32.05, 34.75), (32.02, 34.74), (31.97, 34.72), (31.93, 34.69),
+         (31.88, 34.68), (31.80, 34.64), (31.67, 34.55)]
+DBZ_COLORS = [(15, (90, 200, 255)), (20, (40, 120, 255)), (30, (60, 220, 90)),
+              (38, (255, 220, 0)), (45, (255, 90, 0)), (55, (255, 0, 160))]
+
+
+def render_png(raw, res, radar_time=None, scale=6):
+    """תמונת מכ"ם גולמית (15+ dBZ) עם קו חוף, טבעות 10/20/30 ק"מ, תאים וחצי תנועה. מחזיר bytes"""
+    ny, nx = raw.shape
+    rgb = np.full((ny, nx, 3), 38, np.uint8)
+    for lo, col in DBZ_COLORS:
+        rgb[raw >= lo] = col
     img = Image.fromarray(np.flipud(rgb)).resize((nx * scale, ny * scale), Image.NEAREST)
     dr = ImageDraw.Draw(img)
 
     def pt(x, y):
         return ((x - X_RANGE[0]) / CELL_KM * scale, (Y_RANGE[1] - y) / CELL_KM * scale)
 
-    tx, ty = pt(0, 0)
-    dr.ellipse([tx - 5, ty - 5, tx + 5, ty + 5], outline="white", width=2)
+    cos0 = math.cos(math.radians(TARGET_LAT))
+    dr.line([pt((lon - TARGET_LON) * KM_PER_DEG * cos0, (lat - TARGET_LAT) * KM_PER_DEG) for lat, lon in COAST],
+            fill=(170, 170, 170), width=2)
+    cx, cy = pt(0, 0)
+    for rkm in (10, 20, 30):
+        rr = rkm / CELL_KM * scale
+        dr.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], outline=(110, 110, 110))
+        dr.text((cx - 6, cy - rr - 11), str(rkm), fill=(190, 190, 190))
+    for c in res.get("cell_draw") or []:
+        px, py = pt(c["x"], c["y"])
+        rr = max(c["r"] / CELL_KM * scale, 3)
+        dr.ellipse([px - rr, py - rr, px + rr, py + rr], outline="white")
+        if c["vx"] is not None:
+            dr.line([(px, py), pt(c["x"] + c["vx"] * 0.5, c["y"] + c["vy"] * 0.5)], fill="white", width=2)
     m = res.get("motion")
     if m and m["speed"] >= MIN_SPEED_KMH:
         ux, uy = m["vx"] / m["speed"], m["vy"] / m["speed"]
         d = m["speed"] * MAX_LEAD_MIN / 60.0
-        dr.line([pt(0, 0), pt(-ux * d, -uy * d)], fill="white", width=1)
-    img.save(path)
+        dr.line([pt(0, 0), pt(-ux * d, -uy * d)], fill=(255, 255, 0), width=1)
+    dr.ellipse([cx - 5, cy - 5, cx + 5, cy + 5], outline="white", width=2)
+    dr.rectangle([0, 0, 235, 14], fill=(0, 0, 0))
+    when = radar_time.strftime("%H:%M") if radar_time else "test"
+    dr.text((3, 2), f"radar {when}  v{VERSION}  {res.get('src') or '-'}/{res.get('stage') or '-'}",
+            fill=(255, 255, 255))
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    return buf.getvalue()
 
 
 # ------------------------------------------------------------------ ראשי
@@ -541,27 +749,38 @@ def run(dry_run=False, png=None):
     times = [f["time"] for f in frames]
     radar_time = datetime.fromtimestamp(times[-1], TZ)
     res = analyze(fields, times)
-    if png:
-        save_png(clean_field(fields[-1])[0], res, png)
+    raw = fields[-1]
 
     state = load_state()
     sent = False
-    msg = None
     stage = res["stage"]
-    qualifies = stage is not None and res["score"] >= MIN_SCORE
-    if qualifies:
+    png_bytes = None
+    if qualifies(res):
         msg = build_message(res, radar_time, now)
         if dry_run:
             print(msg)
         elif should_send(state, stage, now):
-            sent = send_telegram(msg)
+            png_bytes = render_png(raw, res, radar_time)
+            sent = send_telegram_photo(png_bytes, msg) or send_telegram(msg)
+
+    # תמונה לבדיקה: בכל התראה שנשלחה, ובכל חשד לפספוס (הד קרוב בלי התראה)
+    suspicious = (not sent) and res["diag"]["raw20_10km"] >= SUSPICIOUS_MIN_CELLS
+    if png:
+        with open(png, "wb") as f:
+            f.write(render_png(raw, res, radar_time))
+    if not dry_run and (sent or suspicious):
+        os.makedirs(OUT_DIR, exist_ok=True)
+        name = f"{'alert' if sent else 'suspicious'}_{radar_time:%Y%m%d_%H%M}.png"
+        with open(os.path.join(OUT_DIR, name), "wb") as f:
+            f.write(png_bytes or render_png(raw, res, radar_time))
 
     m = res["motion"]
     summary = {"v": VERSION, "t": now.isoformat(timespec="seconds"), "radar": radar_time.isoformat(timespec="seconds"),
-               "rain_cells": res["rain_cells"], "stage": stage, "eta": res["eta"], "score": res["score"],
+               "rain_cells": res["rain_cells"], "stage": stage, "src": res["src"], "eta": res["eta"],
+               "score": res["score"],
                "speed": round(m["speed"], 1) if m else None,
                "heading": round(math.degrees(math.atan2(m["vx"], m["vy"])) % 360) if m else None,
-               **res["diag"], "sent": sent}
+               **res["diag"], "cell": res["cell_dbg"], "sent": sent}
     print(json.dumps(summary, ensure_ascii=False))
 
     if not dry_run:
@@ -578,10 +797,11 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="בלי שליחה ובלי שמירת מצב")
     ap.add_argument("--png", help="שמירת תמונת בקרה (למשל out.png)")
-    ap.add_argument("--test-telegram", action="store_true", help="שולח הודעת בדיקה אחת וסיים")
+    ap.add_argument("--test-telegram", action="store_true", help="שולח הודעת בדיקה ותמונת בדיקה וסיים")
     a = ap.parse_args()
     if a.test_telegram:
         ok = send_telegram(f"✅ בדיקת חיבור: בוט הגשם {VERSION} מחובר לטלגרם.")
-        print("ההודעה נשלחה" if ok else "השליחה נכשלה")
-        sys.exit(0 if ok else 1)
+        ok_img = send_telegram_photo(render_png(np.zeros(XX.shape, np.float32), {}, None), "🖼️ בדיקת שליחת תמונה")
+        print("ההודעה נשלחה" if ok else "שליחת ההודעה נכשלה", "| התמונה נשלחה" if ok_img else "| שליחת התמונה נכשלה")
+        sys.exit(0 if (ok and ok_img) else 1)
     sys.exit(run(a.dry_run, a.png))
