@@ -2,12 +2,12 @@ name: Mediterranean Weather Bot
 
 on:
   schedule:
-    # כל 5 דקות, רק בחודשי הגשם (ינואר-אפריל ואוקטובר-דצמבר)
+    # רק גיבוי. ההפעלה העיקרית מגיעה מ-cron-job.org כל 5 דקות
     - cron: '2-59/5 * * 1-4,10-12 *'
   workflow_dispatch:
     inputs:
       test_telegram:
-        description: 'שלח הודעת בדיקה לטלגרם'
+        description: 'שלח הודעת בדיקה ותמונת בדיקה לטלגרם'
         type: boolean
         default: false
 
@@ -45,6 +45,15 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           STATE_DIR: state
         run: python bot.py ${{ inputs.test_telegram && '--test-telegram' || '' }}
+
+      # תמונות מכ"ם של התראות ושל חשד לפספוס (נשמרות 14 יום, מופיעות בתחתית עמוד הריצה)
+      - name: Upload radar images
+        if: ${{ always() && hashFiles('out/*.png') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: radar-${{ github.run_id }}
+          path: out/*.png
+          retention-days: 14
 
       - name: Save state
         if: always()
