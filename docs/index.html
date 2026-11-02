@@ -30,6 +30,7 @@ svg.t{width:100%;height:70px;display:block}.none{color:var(--mute);font-size:.9r
 .bar input{flex:1;accent-color:var(--s)}.bar b{font-variant-numeric:tabular-nums;min-width:48px}
 .credit{font-size:.7rem;color:var(--mute);margin:8px 0 0;text-align:center}.credit a{color:inherit}
 .ring{color:var(--mute);font:500 11px Heebo;white-space:nowrap;transform:translate(-50%,-120%);text-shadow:0 0 4px var(--bg)}
+@media(prefers-color-scheme:dark){.basemap{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.7)}}
 button:focus-visible,input:focus-visible{outline:3px solid var(--s);outline-offset:2px}
 </style>
 </head>
@@ -50,7 +51,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--s);outline-offs
 <section class="card">
   <h2>מכ״ם עכשיו</h2><div id="map"></div>
   <div class="bar"><button id="play" aria-label="הפעל הנפשה">▶</button><input id="sl" type="range" min="0" max="0" value="0" aria-label="פריים מכ״ם"><b id="mt">--:--</b></div>
-  <p class="credit"><a href="https://www.rainviewer.com">Weather data by Rain Viewer</a> · © OpenStreetMap · © CARTO</p>
+  <p class="credit"><a href="https://www.rainviewer.com">Weather data by Rain Viewer</a> · © OpenStreetMap</p>
 </section>
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -124,9 +125,7 @@ function drawTrend(tr) {
 // מכ״ם
 const map = L.map('map', {zoomControl: false, attributionControl: false, minZoom: 6, maxZoom: 11}).setView(T, 9);
 const dm = matchMedia('(prefers-color-scheme: dark)');
-let base;
-const setBase = () => { base && map.removeLayer(base); base = L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dm.matches ? 'dark' : 'light'}_all/{z}/{x}/{y}{r}.png`, {subdomains: 'abcd'}).addTo(map); base.bringToBack(); };
-setBase(); dm.addEventListener('change', setBase);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, className: 'basemap'}).addTo(map);  // ללא מפתח; מצב כהה ב-CSS
 [10, 20, 30].forEach(k => {
   L.circle(T, {radius: k * 1000, color: '#7f98ad', weight: 1, dashArray: '3 6', fill: false, interactive: false}).addTo(map);
   L.marker([T[0] + k / 111.195, T[1]], {interactive: false, icon: L.divIcon({className: 'ring', html: k + ' ק״מ', iconSize: [0, 0]})}).addTo(map);
