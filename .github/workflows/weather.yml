@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write   # לפרסום status.json לענף status
 
 jobs:
   run-weather-bot:
@@ -45,6 +45,18 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           STATE_DIR: state
         run: python bot.py ${{ inputs.test_telegram && '--test-telegram' || '' }}
+
+      # פרסום המצב לדשבורד: ענף status עם commit יחיד שנדרס בכל ריצה (בלי היסטוריה מתנפחת)
+      - name: Publish status
+        if: ${{ always() && hashFiles('status/status.json') != '' }}
+        run: |
+          cd status
+          git init -q -b status
+          git config user.name "rain-bot"
+          git config user.email "rain-bot@users.noreply.github.com"
+          git add status.json
+          git commit -q -m "status"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" status
 
       # תמונות מכ"ם של התראות ושל חשד לפספוס (נשמרות 14 יום, מופיעות בתחתית עמוד הריצה)
       - name: Upload radar images
