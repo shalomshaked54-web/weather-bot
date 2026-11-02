@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>התראות גשם, גבעת שמואל</title>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{--bg:#eaf0f4;--card:#fbfdfe;--ink:#0c2233;--mute:#52687a;--line:rgba(12,34,51,.13);--s:#0f766e;--sbg:#d7efec;color-scheme:light}
+@media(prefers-color-scheme:dark){:root{--bg:#09151f;--card:#102232;--ink:#e6eef4;--mute:#93aabb;--line:rgba(230,238,244,.15);--s:#5fd0c4;--sbg:#12373a;color-scheme:dark}}
+body[data-s=early]{--s:#b45309;--sbg:#fbe9cf}body[data-s=imminent]{--s:#c2410c;--sbg:#fddcc8}body[data-s=now]{--s:#b91c1c;--sbg:#fbd5d5}body[data-s=stale]{--s:#64748b;--sbg:#e2e8f0}
+@media(prefers-color-scheme:dark){body[data-s=early]{--s:#f0b35a;--sbg:#3d2c10}body[data-s=imminent]{--s:#ff9a62;--sbg:#40200f}body[data-s=now]{--s:#ff8a8a;--sbg:#431919}body[data-s=stale]{--s:#a3b3c6;--sbg:#1f2c3a}}
+*{box-sizing:border-box}body{margin:0;font-family:Heebo,system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+main{display:grid;gap:14px;padding:14px;max-width:1180px;margin:auto}
+@media(min-width:900px){main{grid-template-columns:minmax(380px,460px) 1fr;align-items:start}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px}
+h2{font-size:.9rem;font-weight:500;color:var(--mute);margin:0 0 10px}
+.hero{background:var(--sbg);border-color:transparent}
+.hero small{color:var(--mute);font-size:.82rem}
+.hero h1{margin:6px 0 2px;font-size:2.6rem;font-weight:800;line-height:1.05;color:var(--s)}
+.hero p{margin:0;color:var(--ink);font-size:1rem}
+.eta{margin-top:14px;display:flex;align-items:baseline;gap:8px}.eta b{font-size:2.2rem;font-weight:800;font-variant-numeric:tabular-nums}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.grid div{background:var(--card);border-radius:14px;padding:10px 12px}.grid span{display:block;font-size:.76rem;color:var(--mute)}.grid b{font-size:1.05rem;font-weight:500}
+ul{list-style:none;margin:0;padding:0}li{display:flex;justify-content:space-between;gap:8px;padding:9px 0;border-top:1px solid var(--line);font-size:.92rem}li:first-child{border:0}li em{font-style:normal;color:var(--mute)}
+svg.t{width:100%;height:70px;display:block}.none{color:var(--mute);font-size:.9rem}
+#map{height:min(70vh,640px);border-radius:14px;background:var(--bg)}
+.bar{display:flex;align-items:center;gap:10px;margin-top:10px}.bar button{width:38px;height:38px;border-radius:50%;border:0;background:var(--s);color:var(--card);cursor:pointer;font-size:14px}
+.bar input{flex:1;accent-color:var(--s)}.bar b{font-variant-numeric:tabular-nums;min-width:48px}
+.credit{font-size:.7rem;color:var(--mute);margin:8px 0 0;text-align:center}.credit a{color:inherit}
+.ring{color:var(--mute);font:500 11px Heebo;white-space:nowrap;transform:translate(-50%,-120%);text-shadow:0 0 4px var(--bg)}
+button:focus-visible,input:focus-visible{outline:3px solid var(--s);outline-offset:2px}
+</style>
+</head>
+<body data-s="stale">
+<main>
+<div>
+  <section class="card hero" aria-live="polite">
+    <small id="srcLine">טוען…</small>
+    <h1 id="stateTitle">טוען</h1>
+    <p id="stateSub"></p>
+    <div class="eta" id="etaRow" hidden><b id="eta"></b><span id="etaAt"></span></div>
+    <div class="grid" id="facts" hidden></div>
+  </section>
+  <section class="card" style="margin-top:14px"><h2>הד הקרוב לגבעה, שעתיים אחרונות</h2><div id="trend"></div></section>
+  <section class="card" style="margin-top:14px"><h2>התראות אחרונות</h2><ul id="alerts"></ul></section>
+  <p class="credit" id="foot"></p>
+</div>
+<section class="card">
+  <h2>מכ״ם עכשיו</h2><div id="map"></div>
+  <div class="bar"><button id="play" aria-label="הפעל הנפשה">▶</button><input id="sl" type="range" min="0" max="0" value="0" aria-label="פריים מכ״ם"><b id="mt">--:--</b></div>
+  <p class="credit"><a href="https://www.rainviewer.com">Weather data by Rain Viewer</a> · © OpenStreetMap · © CARTO</p>
+</section>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const STATUS_URL = 'https://raw.githubusercontent.com/shalomshaked54-web/weather-bot/status/status.json';
+const T = [32.078, 34.847], $ = id => document.getElementById(id);
+const hm = d => new Intl.DateTimeFormat('he-IL', {timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false}).format(d);
+const STAGE = {early: ['גשם בדרך', 'יש זמן להתכונן'], imminent: ['מגיע בקרוב', 'הגשם כבר קרוב'], now: ['יורד עכשיו', 'גשם באזור הגבעה']};
+const DIRS = ['צפון', 'צפון-מזרח', 'מזרח', 'דרום-מזרח', 'דרום', 'דרום-מערב', 'מערב', 'צפון-מערב'];
+const lvl = d => d >= 46 ? 'עז מאוד' : d >= 38 ? 'חזק' : d >= 28 ? 'בינוני' : 'קל';
+const conf = s => s >= 3 ? 'גבוהה' : s === 2 ? 'בינונית' : 'נמוכה';
+
+async function loadStatus() {
+  try {
+    const r = await fetch(STATUS_URL + '?t=' + Date.now(), {cache: 'no-store'});
+    if (!r.ok) throw 0;
+    render(await r.json());
+  } catch (e) {
+    document.body.dataset.s = 'stale';
+    $('stateTitle').textContent = 'אין נתוני בוט';
+    $('stateSub').textContent = 'הבוט עוד לא פרסם מצב. בדוק שהריצה האחרונה ב-GitHub Actions הצליחה.';
+    $('srcLine').textContent = '';
+  }
+}
+
+function render(s) {
+  const age = Math.round((Date.now() - Date.parse(s.updated)) / 60000);
+  const stale = age > 25;
+  const st = stale ? 'stale' : (s.stage || 'quiet');
+  document.body.dataset.s = st;
+  $('etaRow').hidden = $('facts').hidden = true;
+  $('srcLine').textContent = stale ? '' : (s.src === 'cell' ? 'תא גשם מקומי' : s.src === 'system' ? 'מערכת גשם מהים' : 'מצב הבוט');
+  if (stale) {
+    $('stateTitle').textContent = 'הבוט לא מעודכן';
+    $('stateSub').textContent = `העדכון האחרון לפני ${age} דק׳. בדוק את cron-job.org וה-Actions.`;
+  } else if (!s.stage) {
+    $('stateTitle').textContent = 'שקט';
+    $('stateSub').textContent = s.nearest15_km == null ? 'אין גשם בטווח הסריקה.'
+      : `אין התראה. ההד הקרוב ביותר במרחק ${Math.round(s.nearest15_km)} ק״מ.`;
+  } else {
+    $('stateTitle').textContent = STAGE[s.stage][0];
+    $('stateSub').textContent = STAGE[s.stage][1];
+    const facts = [['ודאות', conf(s.score)], ['עוצמה', s.peak_dbz ? lvl(s.peak_dbz) : '-']];
+    if (s.stage !== 'now') {
+      const radarAge = (Date.now() - Date.parse(s.radar)) / 60000, [lo, hi] = s.eta.map(x => Math.max(0, Math.round(x - radarAge)));
+      $('eta').textContent = hi - lo < 5 ? `${lo} דק׳` : `${lo}-${hi} דק׳`;
+      $('etaAt').textContent = `סביב ${hm(new Date(Date.now() + (lo + hi) / 2 * 60000))}`;
+      $('etaRow').hidden = false;
+      facts.push(['מגיע מכיוון', s.heading == null ? '-' : DIRS[Math.floor(((s.heading + 180) % 360 + 22.5) % 360 / 45)]],
+                 ['מהירות', s.speed ? s.speed + ' קמ״ש' : '-'], ['מרחק', s.front_km == null ? '-' : Math.round(s.front_km) + ' ק״מ']);
+    }
+    $('facts').innerHTML = facts.map(f => `<div><span>${f[0]}</span><b>${f[1]}</b></div>`).join('');
+    $('facts').hidden = false;
+  }
+  $('foot').textContent = `עודכן ${hm(new Date(s.updated))} (לפני ${age} דק׳) · פריים מכ״ם ${hm(new Date(s.radar))} · גרסה ${s.version}`;
+  const al = (s.alerts || []).slice().reverse().slice(0, 8);
+  $('alerts').innerHTML = al.length ? al.map(a => `<li><span>${hm(new Date(a.t))} · ${(STAGE[a.stage] || [a.stage])[0]}</span><em>${a.src === 'cell' ? 'תא' : 'מערכת'}</em></li>`).join('')
+    : '<li class="none">עוד לא נשלחו התראות.</li>';
+  drawTrend(s.trend || []);
+}
+
+function drawTrend(tr) {
+  const pts = tr.filter(p => p.n15 != null);
+  if (pts.length < 2) { $('trend').innerHTML = '<span class="none">אין עדיין הד קרוב להצגה.</span>'; return; }
+  const W = 400, H = 70, max = Math.max(40, ...pts.map(p => p.n15)), x = i => i / (tr.length - 1) * W, y = v => 6 + v / max * (H - 14);
+  let d = '';
+  tr.forEach((p, i) => { d += p.n15 == null ? '' : `${d && tr[i - 1] && tr[i - 1].n15 != null ? 'L' : 'M'}${x(i).toFixed(1)} ${y(p.n15).toFixed(1)} `; });
+  $('trend').innerHTML = `<svg class="t" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="מרחק ההד הקרוב"><line x1="0" x2="${W}" y1="6" y2="6" stroke="var(--line)"/><path d="${d}" fill="none" stroke="var(--s)" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg><p class="none" style="margin:4px 0 0">למעלה: קרוב לגבעה. למטה: רחוק (עד ${Math.round(max)} ק״מ).</p>`;
+}
+
+// מכ״ם
+const map = L.map('map', {zoomControl: false, attributionControl: false, minZoom: 6, maxZoom: 11}).setView(T, 9);
+const dm = matchMedia('(prefers-color-scheme: dark)');
+let base;
+const setBase = () => { base && map.removeLayer(base); base = L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dm.matches ? 'dark' : 'light'}_all/{z}/{x}/{y}{r}.png`, {subdomains: 'abcd'}).addTo(map); base.bringToBack(); };
+setBase(); dm.addEventListener('change', setBase);
+[10, 20, 30].forEach(k => {
+  L.circle(T, {radius: k * 1000, color: '#7f98ad', weight: 1, dashArray: '3 6', fill: false, interactive: false}).addTo(map);
+  L.marker([T[0] + k / 111.195, T[1]], {interactive: false, icon: L.divIcon({className: 'ring', html: k + ' ק״מ', iconSize: [0, 0]})}).addTo(map);
+});
+L.circleMarker(T, {radius: 7, color: '#fff', weight: 3, fillColor: '#0b6e8a', fillOpacity: 1}).addTo(map);
+let fr = [], ly = [], ix = 0, tm = null;
+const show = i => { ix = i; ly.forEach((l, j) => l.setOpacity(j === i ? .8 : 0)); $('sl').value = i; $('mt').textContent = hm(new Date(fr[i].time * 1000)); };
+async function loadRadar() {
+  try {
+    const d = await (await fetch('https://api.rainviewer.com/public/weather-maps.json', {cache: 'no-store'})).json(), keep = fr.length ? ix : null;
+    ly.forEach(l => map.removeLayer(l)); fr = d.radar.past;
+    ly = fr.map(f => L.tileLayer(`${d.host}${f.path}/256/{z}/{x}/{y}/2/1_0.png`, {opacity: 0, maxNativeZoom: 7, maxZoom: 11, zIndex: 5}).addTo(map));
+    $('sl').max = fr.length - 1; show(keep === null ? fr.length - 1 : Math.min(keep, fr.length - 1));
+  } catch (e) { setTimeout(loadRadar, 60000); }
+}
+const step = () => { show((ix + 1) % fr.length); tm = setTimeout(step, ix === fr.length - 1 ? 1800 : 650); };
+$('play').onclick = () => { if (!fr.length) return; if (tm) { clearTimeout(tm); tm = null; $('play').textContent = '▶'; } else { $('play').textContent = '❚❚'; tm = setTimeout(step, 300); } };
+$('sl').oninput = e => { if (tm) $('play').click(); show(+e.target.value); };
+
+loadStatus(); loadRadar();
+setInterval(loadStatus, 60000); setInterval(loadRadar, 300000);
+</script>
+</body>
+</html>
