@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RainBot v2.6 - דשבורד מזג אוויר</title>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { text-align: center; color: #38bdf8; }
+        .card { background: #1e293b; padding: 20px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .timestamp { color: #94a3b8; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>דשבורד RainBot</h1>
+        <div id="data-container">טוען נתונים...</div>
+    </div>
+
+    <script>
+        async function loadData() {
+            try {
+                // מנסה לטעון את קובץ הנתונים מהתיקייה
+                const response = await fetch('state/history.json');
+                if (!response.ok) throw new Error('הנתונים עדיין אינם זמינים');
+                const data = await response.json();
+                
+                const container = document.getElementById('data-container');
+                if (data.length === 0) {
+                    container.innerHTML = '<div class="card">אין עדיין היסטוריית נתונים.</div>';
+                    return;
+                }
+
+                // הצגת הנתונים מהרשומות האחרונות
+                container.innerHTML = data.reverse().map(entry => `
+                    <div class="card">
+                        <div class="timestamp">עדכון אחרון: ${entry.timestamp || 'לא ידוע'}</div>
+                        <p>${JSON.stringify(entry)}</p>
+                    </div>
+                `).join('');
+            } catch (error) {
+                document.getElementById('data-container').innerHTML = `
+                    <div class="card">
+                        <p>ממתין שהבוט ייצר את קובץ הנתונים הראשון בריצה הקרובה...</p>
+                    </div>
+                `;
+            }
+        }
+        loadData();
+    </script>
+</body>
+</html>
