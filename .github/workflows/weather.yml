@@ -1,8 +1,9 @@
 name: Mediterranean Weather Bot
 
 on:
-  # רק גיבוי. ההפעלה העיקרית מגיעה מ-cron-job.org כל 5 דקות
-  - cron: '2-59/5 * * 1-4,10-12 *'
+  schedule:
+    # רק גיבוי. ההפעלה העיקרית מגיעה מ-cron-job.org כל 5 דקות
+    - cron: '2-59/5 * * 1-4,10-12 *'
   workflow_dispatch:
     inputs:
       test_telegram:
@@ -15,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   run-weather-bot:
@@ -54,10 +55,9 @@ jobs:
           path: out/*.png
           retention-days: 14
 
-      - name: Commit and push history data
-        run: |
-          git config --global user.name "RainBot Automated"
-          git config --global user.email "bot@users.noreply.github.com"
-          git add state/history.json
-          git commit -m "Auto-update weather history data [skip ci]" || echo "No changes to commit"
-          git push
+      - name: Save state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state
+          key: rain-state-${{ github.run_id }}
