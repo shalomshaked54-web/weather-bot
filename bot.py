@@ -575,7 +575,14 @@ def append_history(entry):
     except OSError:
         lines = []
     lines.append(json.dumps(entry, ensure_ascii=False))
+    
+    # שומר את קובץ ה-JSON Lines הקיים
     atomic_write(HISTORY_FILE, "\n".join(lines[-HISTORY_MAX_LINES:]) + "\n")
+    
+    # מייצר גם קובץ history.json מסודר עבור הדשבורד
+    json_entries = [json.loads(line) for line in lines if line.strip()]
+    json_path = os.path.join(STATE_DIR, "history.json")
+    atomic_write(json_path, json.dumps(json_entries, ensure_ascii=False, indent=2))
 
 
 def parse_ts(s):
