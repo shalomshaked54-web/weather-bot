@@ -1,9 +1,8 @@
 name: Mediterranean Weather Bot
 
 on:
-  schedule:
-    # רק גיבוי. ההפעלה העיקרית מגיעה מ-cron-job.org כל 5 דקות
-    - cron: '2-59/5 * * 1-4,10-12 *'
+  # רק גיבוי. ההפעלה העיקרית מגיעה מ-cron-job.org כל 5 דקות
+  - cron: '2-59/5 * * 1-4,10-12 *'
   workflow_dispatch:
     inputs:
       test_telegram:
@@ -16,7 +15,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   run-weather-bot:
@@ -55,13 +54,7 @@ jobs:
           path: out/*.png
           retention-days: 14
 
-      - name: Save state
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: state
-          key: rain-state-${{ github.run_id }}
-- name: Commit and push history data
+      - name: Commit and push history data
         run: |
           git config --global user.name "RainBot Automated"
           git config --global user.email "bot@users.noreply.github.com"
