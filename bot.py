@@ -44,12 +44,13 @@ from PIL import Image, ImageDraw
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 STATE_DIR = os.environ.get("STATE_DIR", "state")
+STATUS_DIR = os.environ.get("STATUS_DIR", "status")   # status.json לדשבורד
 OUT_DIR = os.environ.get("OUT_DIR", "out")   # תמונות התראה / חשד לפספוס (מועלות כ-artifact)
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
 HISTORY_FILE = os.path.join(STATE_DIR, "history.jsonl")
 HISTORY_MAX_LINES = 3000
 
-VERSION = "2.6-beta"
+VERSION = "2.7-beta"
 TZ = ZoneInfo("Asia/Jerusalem")
 
 TARGET_LAT, TARGET_LON = 32.0780, 34.8470
@@ -597,6 +598,30 @@ def should_send(state, stage, now):
     return now - last >= timedelta(minutes=COOLDOWN_MIN)
 
 
+def write_status(res, summary, state, radar_time, now):
+    """status.json: מה שהדשבורד מציג (מצב נוכחי, התראות אחרונות, מגמת ההד הקרוב)"""
+    trend = []
+    try:
+        with open(HISTORY_FILE) as f:
+            for line in f.read().splitlines()[-24:]:
+                h = json.loads(line)
+                trend.append({"t": h["t"], "n15": h.get("nearest15_km"), "m10": h.get("max_dbz_10km")})
+    except (OSError, ValueError):
+        pass
+    mu = res.get("motion_used")
+    active = qualifies(res)
+    status = {"updated": now.isoformat(timespec="seconds"), "radar": radar_time.isoformat(timespec="seconds"),
+              "version": VERSION, "stage": res["stage"] if active else None, "src": res["src"] if active else None,
+              "eta": res["eta"] if active else None, "score": res["score"] if active else None,
+              "peak_dbz": res.get("peak_dbz") if active else None,
+              "front_km": res.get("front_km") if active else None,
+              "speed": round(mu["speed"]) if (active and mu) else None,
+              "heading": round(math.degrees(math.atan2(mu["vx"], mu["vy"])) % 360) if (active and mu) else None,
+              "nearest15_km": summary.get("nearest15_km"), "max_dbz_10km": summary.get("max_dbz_10km"),
+              "alerts": state.get("alerts", []), "trend": trend}
+    atomic_write(os.path.join(STATUS_DIR, "status.json"), json.dumps(status, ensure_ascii=False))
+
+
 def qualifies(res):
     return res["stage"] is not None and res["score"] >= res["min_score"]
 
@@ -788,8 +813,11 @@ def run(dry_run=False, png=None):
             state["last_rain_seen"] = now.isoformat()
         if sent:
             state.update(last_alert=now.isoformat(), last_stage=stage)
+            state["alerts"] = (state.get("alerts", []) + [{"t": now.isoformat(timespec="seconds"), "stage": stage,
+                               "src": res["src"], "eta": res["eta"], "score": res["score"]}])[-15:]
         atomic_write(STATE_FILE, json.dumps(state))
         append_history(summary)
+        write_status(res, summary, state, radar_time, now)
     return 0
 
 
