@@ -25,13 +25,18 @@ jobs:
       - name: Unit tests
         run: python -m unittest discover -s tests -v
 
-      - name: Dry run against live radar
-        run: python bot.py --dry-run --png out.png
+      - name: Dry run against live radar and forecast
+        run: python bot.py --dry-run --png out.png --save-frames out.npz
+
+      - name: Replay saved frames
+        run: python -m rainbot.replay out.npz
 
       - name: Upload dry-run image
         if: ${{ always() && hashFiles('out.png') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: dry-run-${{ github.run_id }}
-          path: out.png
+          path: |
+            out.png
+            out.npz
           retention-days: 7

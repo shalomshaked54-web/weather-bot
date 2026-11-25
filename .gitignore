@@ -4,3 +4,4 @@ __pycache__/
 /state/
 /status/
 /out/
+/out.npz

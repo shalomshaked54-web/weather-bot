@@ -43,6 +43,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          IMS_TOKEN: ${{ secrets.IMS_TOKEN }}   # אופציונלי: מד הגשם בבית דגן. בלי הסוד הבוט עובד כרגיל
           STATE_DIR: state
         run: python bot.py ${{ inputs.test_telegram && '--test-telegram' || '' }}
 
@@ -58,13 +59,13 @@ jobs:
           git commit -q -m "status"
           git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" status
 
-      # תמונות מכ"ם של התראות ושל חשד לפספוס (נשמרות 14 יום, מופיעות בתחתית עמוד הריצה)
+      # תמונות ונתוני מכ"ם (npz, להרצה חוזרת) של התראות ושל חשד לפספוס. נשמרים 14 יום
       - name: Upload radar images
-        if: ${{ always() && hashFiles('out/*.png') != '' }}
+        if: ${{ always() && hashFiles('out/*') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: radar-${{ github.run_id }}
-          path: out/*.png
+          path: out/*
           retention-days: 14
 
       - name: Save state
