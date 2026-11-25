@@ -54,11 +54,11 @@ def plain_text(message):
 def send_telegram(message):
     payload = {"chat_id": config.TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML",
                "disable_web_page_preview": True}
-    r = _post_telegram("sendMessage", "שליחה לטלגרם", json=payload, timeout=10)
+    r = _post_telegram("sendMessage", "שליחה לטלגרם", json=payload, timeout=(5, 20))
     if r == "bad_html":   # 3.2: לא מוותרים על ההתראה בגלל תגית שבורה
         payload = {"chat_id": config.TELEGRAM_CHAT_ID, "text": plain_text(message),
                    "disable_web_page_preview": True}
-        r = _post_telegram("sendMessage", "שליחה לטלגרם (טקסט)", json=payload, timeout=10)
+        r = _post_telegram("sendMessage", "שליחה לטלגרם (טקסט)", json=payload, timeout=(5, 20))
     return "fail" if r == "bad_html" else r
 
 

@@ -214,6 +214,26 @@ class TelegramRobustnessTests(unittest.TestCase):
         self.assertEqual(post.call_count, 3)
 
 
+class TestTelegramCommandTests(unittest.TestCase):
+    """--test-telegram: ReadTimeout (כנראה נשלח) לא מפיל את הריצה (ריצה 13405)"""
+
+    def run_with(self, *responses):
+        with mock.patch.object(config, "TELEGRAM_BOT_TOKEN", "t"), \
+                mock.patch.object(config, "TELEGRAM_CHAT_ID", "c"), \
+                mock.patch.object(bot.requests, "post", side_effect=list(responses)):
+            return main.test_telegram()
+
+    def test_slow_telegram_is_not_a_failure(self):
+        self.assertEqual(self.run_with(bot.requests.exceptions.ReadTimeout(), mock.Mock(status_code=200)), 0)
+
+    def test_all_ok(self):
+        self.assertEqual(self.run_with(mock.Mock(status_code=200), mock.Mock(status_code=200)), 0)
+
+    def test_real_failure_still_fails(self):
+        self.assertEqual(self.run_with(mock.Mock(status_code=401, text="Unauthorized"),
+                                       mock.Mock(status_code=200)), 1)
+
+
 class RadarIndexTests(unittest.TestCase):
 
     def test_frames_sorted_and_deduplicated(self):
