@@ -107,6 +107,7 @@ h2 .sub{font-weight:400;color:var(--mute);font-size:.85rem;margin-inline-start:a
 .al{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:.95rem}
 .al time{font-variant-numeric:tabular-nums;font-weight:500;min-width:3.2em}
 .badge{padding:2px 10px;border-radius:999px;font-size:.8rem;font-weight:700;border:1px solid}
+.badge{color:var(--ink);background:var(--card);border-color:var(--line)}
 .badge.early{color:#8a3f06;background:#fdedd3;border-color:#f9dcae}
 .badge.imminent{color:#9a3009;background:#fde0cc;border-color:#fbc8a6}
 .badge.now{color:#a3161a;background:#fbd9d9;border-color:#f6bcbc}
@@ -235,8 +236,9 @@ try { const t = localStorage.getItem('theme'); if (t) document.documentElement.d
   <section class="card info" aria-labelledby="h-info">
     <h2 id="h-info">איך זה עובד</h2>
     <details open>
-      <summary>שלושת שלבי ההתראה</summary>
+      <summary>שלבי ההתראה</summary>
       <dl>
+        <div><dt><span class="badge">במעקב</span></dt><dd>מערכת גשם גדולה בדרך, אבל עוד רחוקה (45 עד 90 דקות).</dd></div>
         <div><dt><span class="badge early">בדרך</span></dt><dd>גשם צפוי להגיע בעוד כ-20 עד 45 דקות.</dd></div>
         <div><dt><span class="badge imminent">קרוב</span></dt><dd>גשם צפוי להגיע בעוד פחות מ-20 דקות.</dd></div>
         <div><dt><span class="badge now">עכשיו</span></dt><dd>יש גשם מעל הגבעה או ממש לידה.</dd></div>
@@ -349,6 +351,15 @@ function render(s) {
     const fc = s.sources && s.sources.forecast;
     if (fc && fc.ok && fc.prob != null) {
       $('facts').innerHTML = `<div><dt>סיכוי לגשם, 3 שעות</dt><dd>${esc(fc.prob)}%</dd></div>` + (fc.next_rain ? `<div><dt>גשם צפוי בתחזית</dt><dd>${bdi(hm(new Date(fc.next_rain)))}</dd></div>` : '');
+      $('facts').hidden = false;
+    }
+    // מעקב: מערכת גשם גדולה במרחק 45-90 דקות, עוד לפני התראה
+    const w = s.watch;
+    if (w && Array.isArray(w.eta)) {
+      const radarAge = s.radar ? (Date.now() - Date.parse(s.radar)) / 60000 : 0, [lo, hi] = w.eta.map(x => Math.max(0, Math.round(x - radarAge)));
+      setState('quiet', 'שקט, במעקב', `מערכת גשם גדולה מתקרבת מהים. היא צפויה להגיע בעוד ${lo} עד ${hi} דקות, בין ${hm(new Date(Date.now() + lo * 60000))} ל-${hm(new Date(Date.now() + hi * 60000))}.`);
+      $('facts').innerHTML = [['עוצמה', w.peak_dbz ? lvl(w.peak_dbz) : '-'], ['מרחק', w.front_km == null ? '-' : Math.round(w.front_km) + ' ק״מ']]
+        .map(f => `<div><dt>${esc(f[0])}</dt><dd>${esc(f[1])}</dd></div>`).join('') + $('facts').innerHTML;
       $('facts').hidden = false;
     }
   } else {
