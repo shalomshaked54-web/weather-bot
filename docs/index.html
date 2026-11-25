@@ -2,93 +2,298 @@
 <html lang="he" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="מצב התראות הגשם לגבעת שמואל ומפת מכ״ם חיה, לפי בוט הגשם.">
+<meta name="theme-color" content="#0b1b2b">
 <title>התראות גשם, גבעת שמואל</title>
-<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;800&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3C11 11 7 15.5 7 20a9 9 0 0 0 18 0c0-4.5-4-9-9-17z' fill='%232563eb'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 /* כל צבעי הטקסט עומדים ביחס ניגודיות של 4.5:1 לפחות (WCAG AA) מול הרקע שלהם, בשני המצבים */
-:root{--bg:#eaf0f4;--card:#fbfdfe;--ink:#0c2233;--mute:#43586a;--line:rgba(12,34,51,.13);--s:#0f766e;--sbg:#d7efec;color-scheme:light}
-@media(prefers-color-scheme:dark){:root{--bg:#09151f;--card:#102232;--ink:#e6eef4;--mute:#a3b7c6;--line:rgba(230,238,244,.15);--s:#5fd0c4;--sbg:#12373a;color-scheme:dark}}
-body[data-s=early]{--s:#924607;--sbg:#fbe9cf}body[data-s=imminent]{--s:#a3360a;--sbg:#fddcc8}body[data-s=now]{--s:#a51818;--sbg:#fbd5d5}body[data-s=stale]{--s:#4b5869;--sbg:#e2e8f0}
-@media(prefers-color-scheme:dark){body[data-s=early]{--s:#f0b35a;--sbg:#3d2c10}body[data-s=imminent]{--s:#ff9a62;--sbg:#40200f}body[data-s=now]{--s:#ff8a8a;--sbg:#431919}body[data-s=stale]{--s:#a3b3c6;--sbg:#1f2c3a}}
-*{box-sizing:border-box}body{margin:0;font-family:Heebo,system-ui,sans-serif;background:var(--bg);color:var(--ink);line-height:1.45}
+:root{
+  --bg:#eef3f8;--bg2:#e2eaf3;--card:#ffffff;--glass:rgba(255,255,255,.86);--ink:#0b1b2b;--mute:#475a6d;--line:rgba(11,27,43,.12);
+  --accent:#1d4ed8;--s:#0f766e;--sbg:#d9f2ee;--s2:#c4ebe5;--shadow:0 1px 2px rgba(11,27,43,.06),0 8px 28px rgba(11,27,43,.08);
+  --ringc:#516a80;color-scheme:light
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --bg:#07111c;--bg2:#0b1826;--card:#0f1e2e;--glass:rgba(15,30,46,.88);--ink:#e8eef5;--mute:#a2b4c6;--line:rgba(232,238,245,.13);
+  --accent:#8ab4ff;--s:#5fd4c6;--sbg:#0f3333;--s2:#134040;--shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);--ringc:#8ea4b8;color-scheme:dark}}
+:root[data-theme=dark]{
+  --bg:#07111c;--bg2:#0b1826;--card:#0f1e2e;--glass:rgba(15,30,46,.88);--ink:#e8eef5;--mute:#a2b4c6;--line:rgba(232,238,245,.13);
+  --accent:#8ab4ff;--s:#5fd4c6;--sbg:#0f3333;--s2:#134040;--shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);--ringc:#8ea4b8;color-scheme:dark}
+/* צבע לכל שלב */
+body[data-s=early]{--s:#8a3f06;--sbg:#fdedd3;--s2:#f9dcae}
+body[data-s=imminent]{--s:#9a3009;--sbg:#fde0cc;--s2:#fbc8a6}
+body[data-s=now]{--s:#a3161a;--sbg:#fbd9d9;--s2:#f6bcbc}
+body[data-s=stale]{--s:#475569;--sbg:#e5eaf1;--s2:#d3dbe6}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) body[data-s=early]{--s:#f5b75c;--sbg:#3a2a0f;--s2:#4a3512}:root:not([data-theme=light]) body[data-s=imminent]{--s:#ff9d66;--sbg:#3d1f0e;--s2:#4f2812}:root:not([data-theme=light]) body[data-s=now]{--s:#ff8f8f;--sbg:#421818;--s2:#561e1e}:root:not([data-theme=light]) body[data-s=stale]{--s:#a9b8ca;--sbg:#1c2938;--s2:#243446}}
+:root[data-theme=dark] body[data-s=early]{--s:#f5b75c;--sbg:#3a2a0f;--s2:#4a3512}:root[data-theme=dark] body[data-s=imminent]{--s:#ff9d66;--sbg:#3d1f0e;--s2:#4f2812}:root[data-theme=dark] body[data-s=now]{--s:#ff8f8f;--sbg:#421818;--s2:#561e1e}:root[data-theme=dark] body[data-s=stale]{--s:#a9b8ca;--sbg:#1c2938;--s2:#243446}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;font-family:Rubik,system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink);line-height:1.5;
+  background-image:radial-gradient(1200px 500px at 85% -10%,var(--sbg),transparent 70%),linear-gradient(var(--bg),var(--bg2));background-attachment:fixed;min-height:100vh}
 .sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
-.skip{position:absolute;inset-inline-start:12px;top:-60px;z-index:2000;background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:10px;font-weight:500}
+.skip{position:absolute;inset-inline-start:12px;top:-80px;z-index:3000;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:500}
 .skip:focus{top:12px}
-header.top{max-width:1180px;margin:auto;padding:14px 14px 0}
-header.top h1{margin:0;font-size:1.05rem;font-weight:500;color:var(--mute)}
-main{display:grid;gap:14px;padding:14px;max-width:1180px;margin:auto}
+a{color:var(--accent)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+
+/* כותרת עליונה */
+.top{position:sticky;top:0;z-index:1500;background:var(--glass);backdrop-filter:saturate(1.4) blur(14px);-webkit-backdrop-filter:saturate(1.4) blur(14px);border-bottom:1px solid var(--line)}
+.top .in{max-width:1280px;margin:auto;padding:10px 16px;display:flex;align-items:center;gap:12px}
+.brand{display:flex;align-items:center;gap:10px;margin:0;font-size:1.05rem;font-weight:700;letter-spacing:-.01em}
+.brand svg{width:30px;height:30px;flex:none}
+.brand small{display:block;font-size:.78rem;font-weight:400;color:var(--mute);letter-spacing:0}
+.live{margin-inline-start:auto;display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--mute);white-space:nowrap}
+.dot{width:9px;height:9px;border-radius:50%;background:#16a34a;box-shadow:0 0 0 0 rgba(22,163,74,.5);animation:pulse 2s infinite}
+body[data-s=stale] .dot{background:#94a3b8;animation:none}
+@keyframes pulse{70%{box-shadow:0 0 0 8px rgba(22,163,74,0)}100%{box-shadow:0 0 0 0 rgba(22,163,74,0)}}
+.iconbtn{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);display:grid;place-items:center;cursor:pointer;flex:none}
+.iconbtn svg{width:20px;height:20px}
+
+/* פריסה */
+main{max-width:1280px;margin:auto;padding:16px;display:grid;gap:16px}
 main:focus{outline:none}
-@media(min-width:900px){main{grid-template-columns:minmax(380px,460px) 1fr;align-items:start}}
-.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px}
-.col{display:grid;gap:14px}
-h2{font-size:.95rem;font-weight:500;color:var(--mute);margin:0 0 10px}
-.hero{background:var(--sbg);border-color:transparent}
-.hero .src{color:var(--mute);font-size:.85rem;margin:0}
-.hero .state{margin:6px 0 2px;font-size:2.6rem;font-weight:800;line-height:1.05;color:var(--s)}
-.hero p{margin:0;color:var(--ink);font-size:1rem}
-.eta{margin-top:14px;display:flex;flex-wrap:wrap;align-items:baseline;gap:8px}.eta b{font-size:2.2rem;font-weight:800;font-variant-numeric:tabular-nums}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0 0}
-.grid div{background:var(--card);border-radius:14px;padding:10px 12px}.grid dt{font-size:.8rem;color:var(--mute)}.grid dd{margin:0;font-size:1.05rem;font-weight:500}
-ul{list-style:none;margin:0;padding:0}li{display:flex;justify-content:space-between;gap:8px;padding:9px 0;border-top:1px solid var(--line);font-size:.95rem}li:first-child{border:0}li em{font-style:normal;color:var(--mute)}
-svg.t{width:100%;height:70px;display:block}.none{color:var(--mute);font-size:.92rem}
-#map{height:min(70vh,640px);border-radius:14px;background:var(--bg);direction:ltr}
-.bar{display:flex;align-items:center;gap:10px;margin-top:10px}.bar button{width:44px;height:44px;border-radius:50%;border:0;background:var(--s);color:var(--card);cursor:pointer;font-size:15px}
-.bar input{flex:1;accent-color:var(--s);min-height:44px}.bar output{font-weight:800;font-variant-numeric:tabular-nums;min-width:48px}
-.credit{font-size:.8rem;color:var(--mute);margin:8px 0 0;text-align:center}.credit a{color:inherit}
-footer{max-width:1180px;margin:auto;padding:0 14px 18px}
-.ring{color:#0c2233;font:500 12px Heebo,sans-serif;white-space:nowrap;transform:translate(-50%,-120%);text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff}
-@media(prefers-color-scheme:dark){.basemap{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.7)}.ring{color:#e6eef4;text-shadow:0 0 3px #000,0 0 3px #000,0 0 3px #000}}
-a:focus-visible,button:focus-visible,input:focus-visible,#map:focus-visible,.leaflet-control a:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
-.leaflet-control-zoom a{width:36px!important;height:36px!important;line-height:36px!important;font-size:20px!important}
+@media (min-width:1000px){
+  main{grid-template-columns:minmax(380px,440px) 1fr;grid-template-areas:"hero map" "trend map" "srcs map" "alerts info";align-items:start}
+  .hero{grid-area:hero}.mapcard{grid-area:map;position:sticky;top:78px}.trendc{grid-area:trend}.alertsc{grid-area:alerts}.info{grid-area:info}.srcs{grid-area:srcs}
+}
+.card{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:20px;box-shadow:var(--shadow)}
+h2{font-size:1rem;font-weight:700;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+h2 .sub{font-weight:400;color:var(--mute);font-size:.85rem;margin-inline-start:auto}
+.none{color:var(--mute);font-size:.92rem;margin:0}
+
+/* כרטיס מצב */
+.hero{position:relative;overflow:hidden;background:linear-gradient(160deg,var(--sbg) 0%,var(--card) 85%);border-color:var(--s2)}
+.hero::after{content:"";position:absolute;inset-inline-end:-60px;top:-60px;width:220px;height:220px;border-radius:50%;background:var(--s2);opacity:.55;pointer-events:none}
+.hero>*{position:relative;z-index:1}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;background:var(--card);border:1px solid var(--s2);color:var(--ink);font-size:.82rem;font-weight:500}
+.chip:empty{display:none}
+.headline{display:flex;align-items:center;gap:14px;margin:14px 0 4px}
+.glyph{width:64px;height:64px;flex:none;border-radius:20px;background:var(--card);display:grid;place-items:center;color:var(--s);border:1px solid var(--s2)}
+.glyph svg{width:38px;height:38px}
+.state{margin:0;font-size:clamp(2.1rem,7vw,2.8rem);font-weight:800;line-height:1.05;color:var(--s);letter-spacing:-.02em}
+.stsub{margin:4px 0 0;font-size:1.02rem}
+.eta{margin-top:18px;display:flex;align-items:center;gap:16px;padding:14px 16px;border-radius:18px;background:var(--card);border:1px solid var(--s2)}
+.eta .big{white-space:nowrap;font-size:2.6rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;color:var(--ink)}
+.eta .big small{font-size:1rem;font-weight:500;margin-inline-start:4px}
+.eta .when{color:var(--mute);font-size:.95rem}
+.eta .when b{display:block;color:var(--ink);font-weight:500;font-size:1.05rem}
+/* שלבים */
+.steps{list-style:none;margin:18px 0 0;padding:0;display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.steps li{position:relative;text-align:center;font-size:.8rem;color:var(--mute);padding-top:14px}
+.steps li::before{content:"";position:absolute;top:0;inset-inline:0;height:6px;border-radius:6px;background:var(--line)}
+.steps li.on{color:var(--ink);font-weight:700}.steps li.on::before{background:var(--s)}
+.steps li.past::before{background:var(--s);opacity:.45}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:16px 0 0}
+.facts div{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 12px}
+.facts dt{font-size:.78rem;color:var(--mute)}.facts dd{margin:2px 0 0;font-size:1.05rem;font-weight:700}
+.meta{margin:14px 0 0;font-size:.82rem;color:var(--mute)}
+
+/* מגמה */
+.trend svg{width:100%;height:auto;display:block;overflow:visible}
+.trend .ax{font:400 11px Rubik,sans-serif;fill:var(--mute)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.8rem;color:var(--mute);margin-top:6px}
+.legend i{display:inline-block;width:14px;height:4px;border-radius:2px;background:var(--s);vertical-align:middle;margin-inline-end:6px}
+
+/* התראות */
+.alist{list-style:none;margin:0;padding:0}
+.day{font-size:.8rem;color:var(--mute);font-weight:500;margin:12px 0 4px}
+.day:first-child{margin-top:0}
+.al{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:.95rem}
+.al time{font-variant-numeric:tabular-nums;font-weight:500;min-width:3.2em}
+.badge{padding:2px 10px;border-radius:999px;font-size:.8rem;font-weight:700;border:1px solid}
+.badge.early{color:#8a3f06;background:#fdedd3;border-color:#f9dcae}
+.badge.imminent{color:#9a3009;background:#fde0cc;border-color:#fbc8a6}
+.badge.now{color:#a3161a;background:#fbd9d9;border-color:#f6bcbc}
+.al em{margin-inline-start:auto;font-style:normal;color:var(--mute);font-size:.85rem}
+
+/* מפה */
+.mapcard{padding:0;overflow:hidden}
+.maphead{display:flex;align-items:center;gap:8px;padding:16px 20px 12px}
+.maphead h2{margin:0}
+.mapwrap{position:relative}
+#map{height:clamp(380px,62vh,720px);background:var(--bg2);direction:ltr}
+@media (min-width:1000px){#map{height:calc(100vh - 210px);min-height:520px}}
+.player{position:absolute;inset-inline:12px;bottom:12px;z-index:900;display:flex;align-items:center;gap:10px;padding:8px 12px 8px 8px;border-radius:18px;background:var(--glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--line);box-shadow:var(--shadow)}
+.player button{width:44px;height:44px;border-radius:14px;border:0;background:var(--ink);color:var(--card);cursor:pointer;display:grid;place-items:center;flex:none}
+.player button svg{width:18px;height:18px}
+.player input{direction:ltr;flex:1;accent-color:var(--accent);min-height:44px;min-width:0}
+.player output{font-weight:700;font-variant-numeric:tabular-nums;min-width:3.4em;text-align:center}
+.player .ago{font-size:.78rem;color:var(--mute);white-space:nowrap}
+.mapfoot{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;justify-content:space-between;padding:10px 20px 14px;font-size:.8rem;color:var(--mute)}
+.mapfoot a{color:inherit}
+.scale{display:flex;align-items:center;gap:8px}
+.scale span.bar{width:110px;height:8px;border-radius:4px;background:linear-gradient(90deg,#88ddee,#0099cc,#0077aa,#ffee00,#ff9900,#ff4400,#c10000)}
+.ring{color:#0b1b2b;font:500 12px Rubik,sans-serif;white-space:nowrap;transform:translate(-50%,-120%);text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff}
+.home{width:18px!important;height:18px!important;margin:-9px 0 0 -9px!important;border-radius:50%;background:#1d4ed8;border:3px solid #fff;box-shadow:0 0 0 0 rgba(29,78,216,.5);animation:homep 2.4s infinite}
+@keyframes homep{70%{box-shadow:0 0 0 14px rgba(29,78,216,0)}100%{box-shadow:0 0 0 0 rgba(29,78,216,0)}}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .basemap{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6)}:root:not([data-theme=light]) .ring{color:#e8eef5;text-shadow:0 0 3px #000,0 0 3px #000,0 0 3px #000}}
+:root[data-theme=dark] .basemap{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6)}
+:root[data-theme=dark] .ring{color:#e8eef5;text-shadow:0 0 3px #000,0 0 3px #000,0 0 3px #000}
+.leaflet-control-zoom a{width:40px!important;height:40px!important;line-height:40px!important;font-size:20px!important}
+.leaflet-control-zoom{border-radius:12px!important;overflow:hidden;border:1px solid var(--line)!important;box-shadow:var(--shadow)!important}
+.leaflet-control a:focus-visible,#map:focus-visible{outline:3px solid var(--accent);outline-offset:-3px}
+
+/* מקורות */
+.srcs[hidden]{display:none}
+.slist{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.slist li{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:14px;font-size:.92rem}
+.slist b{font-weight:500}.slist span.v{margin-inline-start:auto;color:var(--mute);font-size:.85rem;text-align:end}
+.ok,.bad,.off{width:10px;height:10px;border-radius:50%;flex:none}.ok{background:#16a34a}.bad{background:#dc2626}.off{background:#94a3b8}
+.warn{margin:14px 0 0;padding:10px 14px;border-radius:14px;background:var(--card);border:1px solid var(--s2);font-size:.92rem}
+.warn[hidden]{display:none}
+/* מידע */
+.info details{border-top:1px solid var(--line);padding:10px 0}
+.info details:first-of-type{border-top:0;padding-top:0}
+.info summary{cursor:pointer;font-weight:500;min-height:32px;display:flex;align-items:center}
+.info p{margin:6px 0 0;color:var(--mute);font-size:.92rem}
+.info dl{margin:8px 0 0;display:grid;gap:6px}
+.info dl div{display:flex;gap:10px;align-items:baseline;font-size:.92rem}
+.info dt{flex:none}.info dd{margin:0;color:var(--mute)}
+footer{max-width:1280px;margin:auto;padding:4px 16px 28px;font-size:.8rem;color:var(--mute);text-align:center}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
+<script>
+// ערכת נושא שנבחרה ידנית (נשמרת רק בדפדפן הזה)
+try { const t = localStorage.getItem('theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
 </head>
 <body data-s="stale">
 <a class="skip" href="#main">דלג לתוכן הראשי</a>
-<header class="top"><h1>התראות גשם · גבעת שמואל</h1></header>
+<header class="top">
+  <div class="in">
+    <h1 class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#1d4ed8"/></linearGradient></defs><path d="M16 3C11 11 7 15.5 7 20a9 9 0 0 0 18 0c0-4.5-4-9-9-17z" fill="url(#g)"/><path d="M12 20a4 4 0 0 0 4 4" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" opacity=".8"/></svg>
+      <span>גשם בגבעת שמואל<small>התראה לפני שהגשם מגיע</small></span>
+    </h1>
+    <p class="live" id="live"><span class="dot" aria-hidden="true"></span><span id="liveTxt">טוען…</span></p>
+    <button class="iconbtn" id="theme" type="button" aria-label="החלפת מצב תצוגה בהיר או כהה">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+  </div>
+</header>
+
 <main id="main" tabindex="-1">
-<div class="col">
   <section class="card hero" aria-labelledby="h-state">
     <h2 id="h-state" class="sr">מצב נוכחי</h2>
-    <p class="src" id="srcLine">טוען…</p>
-    <p class="state" id="stateTitle">טוען</p>
-    <p id="stateSub"></p>
-    <div class="eta" id="etaRow" hidden><b id="eta"></b><span id="etaAt"></span></div>
-    <dl class="grid" id="facts" hidden></dl>
+    <span class="chip" id="srcLine"></span>
+    <div class="headline">
+      <div class="glyph" id="glyph" aria-hidden="true"></div>
+      <div><p class="state" id="stateTitle">טוען</p><p class="stsub" id="stateSub"></p></div>
+    </div>
+    <div class="eta" id="etaRow" hidden>
+      <div class="big" id="eta"></div>
+      <div class="when" id="etaAt"></div>
+    </div>
+    <ol class="steps" id="steps" aria-label="שלבי ההתראה">
+      <li data-k="quiet">שקט</li><li data-k="early">בדרך</li><li data-k="imminent">קרוב</li><li data-k="now">עכשיו</li>
+    </ol>
+    <dl class="facts" id="facts" hidden></dl>
+    <p class="warn" id="warn" hidden></p>
+    <p class="meta" id="foot"></p>
     <p class="sr" id="announce" role="status" aria-live="polite"></p>
   </section>
-  <section class="card" aria-labelledby="h-trend"><h2 id="h-trend">הד הקרוב לגבעה, שעתיים אחרונות</h2><div id="trend"></div></section>
-  <section class="card" aria-labelledby="h-alerts"><h2 id="h-alerts">התראות אחרונות</h2><ul id="alerts"></ul></section>
-</div>
-<section class="card" aria-labelledby="h-map">
-  <h2 id="h-map">מכ״ם עכשיו</h2>
-  <p id="mapDesc" class="sr">מפת מכ״ם של אזור גבעת שמואל, עם טבעות של 10, 20 ו-30 ק״מ סביב הגבעה. אפשר להזיז את המפה בחיצים ולהתקרב או להתרחק במקשי פלוס ומינוס. מצב ההתראה עצמו מופיע בטקסט בכרטיס המצב הנוכחי.</p>
-  <div id="map" role="region" aria-label="מפת מכ״ם" aria-describedby="mapDesc"></div>
-  <div class="bar">
-    <button id="play" type="button" aria-pressed="false" aria-label="הפעל הנפשה של פריימי המכ״ם"><span aria-hidden="true">▶</span></button>
-    <label for="sl" class="sr">בחירת פריים מכ״ם</label>
-    <input id="sl" type="range" min="0" max="0" value="0">
-    <output id="mt" for="sl"><bdi>--:--</bdi></output>
-  </div>
-  <p class="credit"><a href="https://www.rainviewer.com" lang="en">Weather data by Rain Viewer</a> · <span lang="en">© OpenStreetMap</span></p>
-</section>
+
+  <section class="card mapcard" aria-labelledby="h-map">
+    <div class="maphead"><h2 id="h-map">מכ״ם גשם חי</h2><span class="chip" id="frameAge"></span></div>
+    <p id="mapDesc" class="sr">מפת מכ״ם של אזור גבעת שמואל, עם טבעות של 10, 20 ו-30 ק״מ סביב הגבעה. אפשר להזיז את המפה בחיצים ולהתקרב או להתרחק במקשי פלוס ומינוס. מצב ההתראה עצמו מופיע בטקסט בכרטיס המצב הנוכחי.</p>
+    <div class="mapwrap">
+      <div id="map" role="region" aria-label="מפת מכ״ם" aria-describedby="mapDesc"></div>
+      <div class="player">
+        <button id="play" type="button" aria-pressed="false" aria-label="הפעל הנפשה של פריימי המכ״ם"></button>
+        <label for="sl" class="sr">בחירת פריים מכ״ם</label>
+        <input id="sl" type="range" min="0" max="0" value="0">
+        <output id="mt" for="sl"><bdi>--:--</bdi></output>
+      </div>
+    </div>
+    <div class="mapfoot">
+      <span class="scale" aria-hidden="true">קל <span class="bar"></span> חזק</span>
+      <span><a href="https://www.rainviewer.com" lang="en">Weather data by Rain Viewer</a> · <span lang="en">© OpenStreetMap</span></span>
+    </div>
+  </section>
+
+  <section class="card trendc" aria-labelledby="h-trend">
+    <h2 id="h-trend">כמה קרוב הגשם <span class="sub">שעתיים אחרונות</span></h2>
+    <div class="trend" id="trend"></div>
+  </section>
+
+  <section class="card srcs" id="srcs" aria-labelledby="h-srcs" hidden>
+    <h2 id="h-srcs">מקורות המידע</h2>
+    <ul class="slist" id="slist"></ul>
+  </section>
+
+  <section class="card alertsc" aria-labelledby="h-alerts">
+    <h2 id="h-alerts">התראות אחרונות</h2>
+    <div id="alerts"></div>
+  </section>
+
+  <section class="card info" aria-labelledby="h-info">
+    <h2 id="h-info">איך זה עובד</h2>
+    <details open>
+      <summary>שלושת שלבי ההתראה</summary>
+      <dl>
+        <div><dt><span class="badge early">בדרך</span></dt><dd>גשם צפוי להגיע בעוד כ-20 עד 45 דקות.</dd></div>
+        <div><dt><span class="badge imminent">קרוב</span></dt><dd>גשם צפוי להגיע בעוד פחות מ-20 דקות.</dd></div>
+        <div><dt><span class="badge now">עכשיו</span></dt><dd>יש גשם מעל הגבעה או ממש לידה.</dd></div>
+      </dl>
+    </details>
+    <details>
+      <summary>מאיפה הנתונים</summary>
+      <p>הבוט בודק את מכ״ם הגשם כל 5 דקות, מזהה גשם שמתקרב לגבעת שמואל ושולח הודעה בטלגרם. הדף הזה מתעדכן לבד כל דקה.</p>
+    </details>
+    <details>
+      <summary>מה זה ״ודאות״?</summary>
+      <p>כמה הבוט בטוח שהגשם באמת מגיע: האם הוא זז בכיוון קבוע, האם הוא גדול מספיק, והאם הוא נשאר יציב בין תמונות המכ״ם.</p>
+    </details>
+  </section>
 </main>
-<footer><p class="credit" id="foot"></p></footer>
-<noscript><p class="credit">הדף צריך JavaScript כדי להציג את מצב הבוט ואת המכ״ם.</p></noscript>
+<footer id="ver"></footer>
+<noscript><p style="text-align:center">הדף צריך JavaScript כדי להציג את מצב הבוט ואת המכ״ם.</p></noscript>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 const STATUS_URL = 'https://raw.githubusercontent.com/shalomshaked54-web/weather-bot/status/status.json';
 const T = [32.078, 34.847], $ = id => document.getElementById(id);
 const esc = v => String(v).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const bdi = v => `<bdi>${esc(v)}</bdi>`;
-const hm = d => new Intl.DateTimeFormat('he-IL', {timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false}).format(d);
-const STAGE = {early: ['גשם בדרך', 'יש זמן להתכונן'], imminent: ['מגיע בקרוב', 'הגשם כבר קרוב'], now: ['יורד עכשיו', 'גשם באזור הגבעה']};
+const TZ = 'Asia/Jerusalem';
+const hm = d => new Intl.DateTimeFormat('he-IL', {timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false}).format(d);
+const dayKey = d => new Intl.DateTimeFormat('en-CA', {timeZone: TZ}).format(d);
+const dayName = d => {
+  const k = dayKey(d), today = dayKey(new Date()), y = dayKey(new Date(Date.now() - 864e5));
+  return k === today ? 'היום' : k === y ? 'אתמול' : new Intl.DateTimeFormat('he-IL', {timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long'}).format(d);
+};
+const STAGE = {early: ['גשם בדרך', 'יש זמן להתכונן'], imminent: ['מגיע בקרוב', 'הגשם כבר קרוב, כדאי להתארגן'], now: ['יורד עכשיו', 'יש גשם באזור הגבעה']};
+const SHORT = {early: 'בדרך', imminent: 'קרוב', now: 'עכשיו'};
+const ORDER = ['quiet', 'early', 'imminent', 'now'];
 const DIRS = ['צפון', 'צפון-מזרח', 'מזרח', 'דרום-מזרח', 'דרום', 'דרום-מערב', 'מערב', 'צפון-מערב'];
 const lvl = d => d >= 46 ? 'עז מאוד' : d >= 38 ? 'חזק' : d >= 28 ? 'בינוני' : 'קל';
 const conf = s => s >= 3 ? 'גבוהה' : s === 2 ? 'בינונית' : 'נמוכה';
+const ago = m => m < 1 ? 'עכשיו' : m === 1 ? 'לפני דקה' : m < 60 ? `לפני ${m} דק׳` : `לפני ${Math.round(m / 60)} שע׳`;
+
+const ICON = {
+  quiet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+  early: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 17a5 5 0 1 1 1.6-9.7A6 6 0 0 1 20 10a4 4 0 0 1-1 7.9H7z"/></svg>',
+  imminent: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 14a5 5 0 1 1 1.6-9.7A6 6 0 0 1 20 7a4 4 0 0 1-1 7H7z"/><path d="M9 18l-1 2M14 18l-1 2"/></svg>',
+  now: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 13a5 5 0 1 1 1.6-9.7A6 6 0 0 1 20 6a4 4 0 0 1-1 7H7z"/><path d="M8 16l-1.5 3M12 16l-1.5 3M16 16l-1.5 3M10 20l-.7 1.5M14 20l-.7 1.5"/></svg>',
+  stale: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'
+};
+const PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
+const PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
 let lastAnnounce = null;
+
+// ערכת נושא: מחליף בין בהיר לכהה ושומר את הבחירה
+$('theme').onclick = () => {
+  const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  const next = dark ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem('theme', next); } catch (e) {}
+};
 
 // הכרזה לקורא מסך רק כשהמצב באמת משתנה, לא בכל רענון של דקה
 function announce(key, text) {
@@ -101,6 +306,13 @@ function setState(st, title, sub) {
   document.body.dataset.s = st;
   $('stateTitle').textContent = title;
   $('stateSub').textContent = sub;
+  $('glyph').innerHTML = ICON[st] || ICON.quiet;
+  const cur = ORDER.indexOf(st);
+  $('steps').querySelectorAll('li').forEach((li, i) => {
+    li.className = i === cur ? 'on' : (cur > 0 && i > 0 && i < cur ? 'past' : '');
+    if (i === cur) li.setAttribute('aria-current', 'step'); else li.removeAttribute('aria-current');
+  });
+  $('steps').hidden = cur < 0;
   document.title = `${title} · התראות גשם, גבעת שמואל`;
   announce(st + '|' + title, `${title}. ${sub}`);
 }
@@ -113,76 +325,139 @@ async function loadStatus() {
   } catch (e) {
     $('srcLine').textContent = '';
     $('etaRow').hidden = $('facts').hidden = true;
+    $('liveTxt').textContent = 'אין חיבור';
     setState('stale', 'אין נתוני בוט', 'הבוט עוד לא פרסם מצב. בדוק שהריצה האחרונה ב-GitHub Actions הצליחה.');
   }
 }
 
 function render(s) {
-  const age = Math.round((Date.now() - Date.parse(s.updated)) / 60000);
+  const age = Math.max(0, Math.round((Date.now() - Date.parse(s.updated)) / 60000));
   const stale = age > 25;
   $('etaRow').hidden = $('facts').hidden = true;
-  $('srcLine').textContent = stale ? '' : (s.src === 'cell' ? 'תא גשם מקומי' : s.src === 'system' ? 'מערכת גשם מהים' : 'מצב הבוט');
+  $('liveTxt').textContent = stale ? `לא מעודכן · ${ago(age)}` : `עודכן ${ago(age)}`;
+  $('srcLine').textContent = stale ? '' : (s.src === 'cell' ? 'תא גשם מקומי' : s.src === 'system' ? 'מערכת גשם מהים' : 'הבוט פעיל');
   if (stale) {
-    setState('stale', 'הבוט לא מעודכן', `העדכון האחרון לפני ${age} דק׳. בדוק את cron-job.org וה-Actions.`);
+    setState('stale', 'הבוט לא מעודכן', `העדכון האחרון היה ${ago(age)}. בדוק את cron-job.org ואת GitHub Actions.`);
   } else if (!s.stage) {
-    setState('quiet', 'שקט', s.nearest15_km == null ? 'אין גשם בטווח הסריקה.'
-      : `אין התראה. ההד הקרוב ביותר במרחק ${Math.round(s.nearest15_km)} ק״מ.`);
+    const ended = s.rain_ended_at && Date.now() - Date.parse(s.rain_ended_at) < 3 * 3600e3 ? ` הגשם הפסיק ב-${hm(new Date(s.rain_ended_at))}.` : '';
+    setState('quiet', 'שקט', (s.nearest15_km == null ? 'אין גשם בטווח הסריקה.'
+      : `אין התראה. הגשם הקרוב ביותר במרחק ${Math.round(s.nearest15_km)} ק״מ.`) + ended);
+    const fc = s.sources && s.sources.forecast;
+    if (fc && fc.ok && fc.prob != null) {
+      $('facts').innerHTML = `<div><dt>סיכוי לגשם, 3 שעות</dt><dd>${esc(fc.prob)}%</dd></div>` + (fc.next_rain ? `<div><dt>גשם צפוי בתחזית</dt><dd>${bdi(hm(new Date(fc.next_rain)))}</dd></div>` : '');
+      $('facts').hidden = false;
+    }
   } else {
     setState(s.stage, STAGE[s.stage][0], STAGE[s.stage][1]);
     const facts = [['ודאות', conf(s.score)], ['עוצמה', s.peak_dbz ? lvl(s.peak_dbz) : '-']];
-    if (s.stage !== 'now') {
+    if (s.stage !== 'now' && Array.isArray(s.eta)) {
       const radarAge = (Date.now() - Date.parse(s.radar)) / 60000, [lo, hi] = s.eta.map(x => Math.max(0, Math.round(x - radarAge)));
       const at = m => hm(new Date(Date.now() + m * 60000));
-      $('eta').innerHTML = hi - lo < 5 ? `${bdi(lo)} דק׳` : `${bdi(lo + '–' + hi)} דק׳`;
-      $('etaAt').innerHTML = hi - lo < 5 ? `סביב ${bdi(at((lo + hi) / 2))}` : `בין ${bdi(at(lo))} ל-${bdi(at(hi))}`;
+      const narrow = hi - lo < 5;
+      $('eta').innerHTML = `${bdi(narrow ? lo : lo + '–' + hi)}<small>דק׳</small>`;
+      $('etaAt').innerHTML = `זמן הגעה משוער<b>${narrow ? 'סביב ' + bdi(at((lo + hi) / 2)) : 'בין ' + bdi(at(lo)) + ' ל-' + bdi(at(hi))}</b>`;
       $('etaRow').hidden = false;
       facts.push(['מגיע מכיוון', s.heading == null ? '-' : DIRS[Math.floor(((s.heading + 180) % 360 + 22.5) % 360 / 45)]],
                  ['מהירות', s.speed ? s.speed + ' קמ״ש' : '-'], ['מרחק', s.front_km == null ? '-' : Math.round(s.front_km) + ' ק״מ']);
     }
+    const TR = {up: 'מתחזק', down: 'נחלש', steady: 'יציב'};
+    if (TR[s.intensity_trend]) facts.push(['מגמה', TR[s.intensity_trend]]);
+    const fc = s.sources && s.sources.forecast;
+    if (fc && fc.ok && fc.prob != null) facts.push(['סיכוי לגשם, 3 שעות', fc.prob + '%']);
+    if (s.forecast_agree != null) facts.push(['תחזית מזג אוויר', s.forecast_agree ? 'מאשרת' : 'לא מאשרת']);
     $('facts').innerHTML = facts.map(f => `<div><dt>${esc(f[0])}</dt><dd>${esc(f[1])}</dd></div>`).join('');
     $('facts').hidden = false;
   }
-  $('foot').innerHTML = `עודכן ${bdi(hm(new Date(s.updated)))} (לפני ${esc(age)} דק׳) · פריים מכ״ם ${bdi(hm(new Date(s.radar)))} · גרסה ${bdi(s.version)}`;
-  const al = (s.alerts || []).slice().reverse().slice(0, 8);
-  $('alerts').innerHTML = al.length ? al.map(a => `<li><span><time datetime="${esc(a.t)}">${bdi(hm(new Date(a.t)))}</time> · ${esc((STAGE[a.stage] || [a.stage])[0])}</span><em>${a.src === 'cell' ? 'תא' : 'מערכת'}</em></li>`).join('')
-    : '<li class="none">עוד לא נשלחו התראות.</li>';
+  const warn = s.radar_down_since ? `המכ״ם לא זמין מאז ${hm(new Date(s.radar_down_since))}. הבוט ממשיך לפי מקורות אחרים ככל שאפשר.` : '';
+  $('warn').textContent = warn; $('warn').hidden = !warn;
+  renderSources(s.sources);
+  $('foot').innerHTML = `עודכן ב-${bdi(hm(new Date(s.updated)))} · תמונת מכ״ם מ-${bdi(hm(new Date(s.radar)))}`;
+  $('ver').innerHTML = `בוט התראות גשם · גרסה ${bdi(s.version || '-')}`;
+  renderAlerts((s.alerts || []).slice().reverse().slice(0, 10));
   drawTrend(s.trend || []);
+}
+
+// מקורות נוספים (שדה אופציונלי). מוצג רק כשהבוט מפרסם אותו
+function renderSources(src) {
+  if (!src || typeof src !== 'object') { $('srcs').hidden = true; return; }
+  const row = (name, o, val) => {
+    const st = o == null ? 'off' : o.ok ? 'ok' : 'bad';
+    const txt = o == null ? 'לא מחובר' : o.ok ? 'תקין' : 'לא זמין';
+    return `<li><span class="${st}" aria-hidden="true"></span><b>${esc(name)}</b><span class="sr">: ${txt}</span><span class="v">${o && o.ok ? val : esc(txt)}</span></li>`;
+  };
+  const r = src.radar, f = src.forecast, i = src.ims;
+  let h = '';
+  if ('radar' in src) h += row('מכ״ם גשם', r, r && r.age_min != null ? `תמונה ${esc(ago(Math.round(r.age_min)))}` : 'תקין');
+  if ('forecast' in src) h += row('תחזית מזג אוויר', f, f && f.prob != null ? `${esc(f.prob)}% לגשם${f.mm_3h ? ` · ${esc(f.mm_3h)} מ״מ` : ''}` : 'תקין');
+  if ('ims' in src) h += row('תחנת השירות המטאורולוגי', i, i ? `${i.station ? esc(i.station) + ' · ' : ''}${esc(i.mm_10min ?? 0)} מ״מ ב-10 דק׳` : '');
+  $('slist').innerHTML = h; $('srcs').hidden = !h;
+}
+
+function renderAlerts(al) {
+  if (!al.length) { $('alerts').innerHTML = '<p class="none">עוד לא נשלחו התראות.</p>'; return; }
+  let html = '', cur = null;
+  al.forEach(a => {
+    const d = new Date(a.t), k = dayKey(d);
+    if (k !== cur) { if (cur) html += '</ul>'; html += `<h3 class="day">${esc(dayName(d))}</h3><ul class="alist">`; cur = k; }
+    const st = SHORT[a.stage] ? a.stage : '';
+    html += `<li class="al"><time datetime="${esc(a.t)}">${bdi(hm(d))}</time><span class="badge ${st}">${esc(SHORT[a.stage] || a.stage)}</span><em>${a.src === 'cell' ? 'תא מקומי' : 'מערכת מהים'}</em></li>`;
+  });
+  $('alerts').innerHTML = html + '</ul>';
 }
 
 function drawTrend(tr) {
   const pts = tr.filter(p => p.n15 != null);
-  if (pts.length < 2) { $('trend').innerHTML = '<p class="none" style="margin:0">אין עדיין הד קרוב להצגה.</p>'; return; }
-  const W = 400, H = 70, max = Math.max(40, ...pts.map(p => p.n15)), x = i => i / (tr.length - 1) * W, y = v => 6 + v / max * (H - 14);
-  let d = '';
-  tr.forEach((p, i) => { d += p.n15 == null ? '' : `${d && tr[i - 1] && tr[i - 1].n15 != null ? 'L' : 'M'}${x(i).toFixed(1)} ${y(p.n15).toFixed(1)} `; });
+  if (pts.length < 2) {
+    $('trend').innerHTML = '<p class="none">אין גשם קרוב בשעתיים האחרונות. כשיתקרב גשם, יופיע כאן גרף של המרחק שלו מהגבעה.</p>';
+    return;
+  }
+  const W = 400, H = 150, L = 34, R = 6, Tp = 8, B = 22, max = Math.ceil(Math.max(40, ...pts.map(p => p.n15)) / 20) * 20;
+  const x = i => L + i / (tr.length - 1) * (W - L - R), y = v => Tp + v / max * (H - Tp - B);
+  let d = '', area = '', seg = [];
+  const flush = () => { if (seg.length > 1) area += `M${seg[0][0]} ${Tp}L${seg.map(p => p.join(' ')).join('L')}L${seg[seg.length - 1][0]} ${Tp}Z`; seg = []; };
+  tr.forEach((p, i) => {
+    if (p.n15 == null) { flush(); return; }
+    const px = x(i).toFixed(1), py = y(p.n15).toFixed(1);
+    d += `${seg.length ? 'L' : 'M'}${px} ${py} `; seg.push([px, py]);
+  });
+  flush();
+  const ticks = [0, max / 2, max];
+  const grid = ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text class="ax" x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join('');
+  const tl = [0, Math.floor((tr.length - 1) / 2), tr.length - 1].map(i => `<text class="ax" x="${x(i)}" y="${H - 4}" text-anchor="middle">${esc(hm(new Date(tr[i].t)))}</text>`).join('');
   const first = pts[0], last = pts[pts.length - 1];
-  const label = `מרחק ההד הקרוב לגבעה: כעת ${Math.round(last.n15)} ק״מ, בתחילת התקופה ${Math.round(first.n15)} ק״מ (${hm(new Date(first.t))}).`;
-  $('trend').innerHTML = `<svg class="t" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(label)}"><line x1="0" x2="${W}" y1="6" y2="6" stroke="var(--line)"/><path d="${d}" fill="none" stroke="var(--s)" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg><p class="none" style="margin:4px 0 0">למעלה: קרוב לגבעה. למטה: רחוק (עד ${Math.round(max)} ק״מ). ${esc(label)}</p>`;
+  const label = `מרחק הגשם הקרוב לגבעה: כעת ${Math.round(last.n15)} ק״מ, בתחילת התקופה ${Math.round(first.n15)} ק״מ (${hm(new Date(first.t))}).`;
+  $('trend').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}" style="direction:ltr">
+    <defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--s)" stop-opacity=".35"/><stop offset="1" stop-color="var(--s)" stop-opacity="0"/></linearGradient></defs>
+    ${grid}${tl}<path d="${area}" fill="url(#ag)"/><path d="${d}" fill="none" stroke="var(--s)" stroke-width="2.5" stroke-linejoin="round"/>
+    <circle cx="${x(tr.lastIndexOf(last))}" cy="${y(last.n15)}" r="4.5" fill="var(--s)" stroke="var(--card)" stroke-width="2"/></svg>
+    <div class="legend"><span><i></i>מרחק בק״מ. למעלה = קרוב לגבעה</span></div><p class="sr">${esc(label)}</p>`;
 }
 
 // הסטטוס נטען קודם, כך שגם אם Leaflet לא נטען מה-CDN כרטיס המצב ממשיך לעבוד
 loadStatus();
 setInterval(loadStatus, 60000);
+$('play').innerHTML = PLAY;
 
 // מכ״ם
 if (!window.L) {
   $('map').setAttribute('aria-label', 'מפת המכ״ם לא נטענה');
-  $('map').innerHTML = '<p class="none" style="padding:16px;direction:rtl">מפת המכ״ם לא נטענה. מצב ההתראה למעלה ממשיך להתעדכן.</p>';
+  $('map').innerHTML = '<p class="none" style="padding:16px;direction:rtl">מפת המכ״ם לא נטענה. מצב ההתראה ממשיך להתעדכן.</p>';
   $('play').disabled = $('sl').disabled = true;
 } else {
 const map = L.map('map', {zoomControl: false, attributionControl: false, minZoom: 6, maxZoom: 11, keyboard: true}).setView(T, 9);
 L.control.zoom({position: 'topleft', zoomInTitle: 'התקרב', zoomOutTitle: 'התרחק', zoomInText: '+', zoomOutText: '−'}).addTo(map);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, className: 'basemap'}).addTo(map);  // ללא מפתח; מצב כהה ב-CSS
 [10, 20, 30].forEach(k => {
-  L.circle(T, {radius: k * 1000, color: '#5b7489', weight: 1, dashArray: '3 6', fill: false, interactive: false}).addTo(map);
+  L.circle(T, {radius: k * 1000, color: getComputedStyle(document.documentElement).getPropertyValue('--ringc').trim() || '#516a80', weight: 1.2, dashArray: '4 6', fill: false, interactive: false}).addTo(map);
   L.marker([T[0] + k / 111.195, T[1]], {interactive: false, keyboard: false, icon: L.divIcon({className: 'ring', html: '<span dir="rtl">' + k + ' ק״מ</span>', iconSize: [0, 0]})}).addTo(map);
 });
-L.circleMarker(T, {radius: 7, color: '#fff', weight: 3, fillColor: '#0b6e8a', fillOpacity: 1, interactive: false}).addTo(map);
+L.marker(T, {interactive: false, keyboard: false, icon: L.divIcon({className: 'home', iconSize: [18, 18]})}).addTo(map);
 let fr = [], ly = [], ix = 0, tm = null;
 const show = i => {
   ix = i; ly.forEach((l, j) => l.setOpacity(j === i ? .8 : 0)); $('sl').value = i;
-  const t = hm(new Date(fr[i].time * 1000));
+  const d = new Date(fr[i].time * 1000), t = hm(d), m = Math.max(0, Math.round((Date.now() - d) / 60000));
   $('mt').innerHTML = bdi(t);
+  $('frameAge').textContent = i === fr.length - 1 ? `תמונה אחרונה · ${ago(m)}` : `${ago(m)}`;
   $('sl').setAttribute('aria-valuetext', `פריים ${i + 1} מתוך ${fr.length}, שעה ${t}`);
 };
 async function loadRadar() {
@@ -196,7 +471,7 @@ async function loadRadar() {
 const setPlaying = on => {
   $('play').setAttribute('aria-pressed', on);
   $('play').setAttribute('aria-label', on ? 'עצור את ההנפשה' : 'הפעל הנפשה של פריימי המכ״ם');
-  $('play').firstChild.textContent = on ? '❚❚' : '▶';
+  $('play').innerHTML = on ? PAUSE : PLAY;
 };
 const step = () => { show((ix + 1) % fr.length); tm = setTimeout(step, ix === fr.length - 1 ? 1800 : 650); };
 $('play').onclick = () => { if (!fr.length) return; if (tm) { clearTimeout(tm); tm = null; setPlaying(false); } else { setPlaying(true); tm = setTimeout(step, 300); } };
