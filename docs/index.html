@@ -338,6 +338,10 @@ function render(s) {
   $('srcLine').textContent = stale ? '' : (s.src === 'cell' ? 'תא גשם מקומי' : s.src === 'system' ? 'מערכת גשם מהים' : 'הבוט פעיל');
   if (stale) {
     setState('stale', 'הבוט לא מעודכן', `העדכון האחרון היה ${ago(age)}. בדוק את cron-job.org ואת GitHub Actions.`);
+  } else if (!s.stage && s.radar_down_since) {
+    setState('stale', 'המכ״ם לא זמין', `אין תמונת מכ״ם מאז ${hm(new Date(s.radar_down_since))}, ולכן כרגע אי אפשר לזהות גשם מתקרב. הבוט ימשיך לבד כשהמכ״ם יחזור.`);
+    const fc = s.sources && s.sources.forecast;
+    if (fc && fc.ok && fc.prob != null) { $('facts').innerHTML = `<div><dt>סיכוי לגשם לפי תחזית, 3 שעות</dt><dd>${esc(fc.prob)}%</dd></div>`; $('facts').hidden = false; }
   } else if (!s.stage) {
     const ended = s.rain_ended_at && Date.now() - Date.parse(s.rain_ended_at) < 3 * 3600e3 ? ` הגשם הפסיק ב-${hm(new Date(s.rain_ended_at))}.` : '';
     setState('quiet', 'שקט', (s.nearest15_km == null ? 'אין גשם בטווח הסריקה.'
@@ -351,7 +355,7 @@ function render(s) {
     setState(s.stage, STAGE[s.stage][0], STAGE[s.stage][1]);
     const facts = [['ודאות', conf(s.score)], ['עוצמה', s.peak_dbz ? lvl(s.peak_dbz) : '-']];
     if (s.stage !== 'now' && Array.isArray(s.eta)) {
-      const radarAge = (Date.now() - Date.parse(s.radar)) / 60000, [lo, hi] = s.eta.map(x => Math.max(0, Math.round(x - radarAge)));
+      const radarAge = s.radar ? (Date.now() - Date.parse(s.radar)) / 60000 : 0, [lo, hi] = s.eta.map(x => Math.max(0, Math.round(x - radarAge)));
       const at = m => hm(new Date(Date.now() + m * 60000));
       const narrow = hi - lo < 5;
       $('eta').innerHTML = `${bdi(narrow ? lo : lo + '–' + hi)}<small>דק׳</small>`;
@@ -364,14 +368,16 @@ function render(s) {
     if (TR[s.intensity_trend]) facts.push(['מגמה', TR[s.intensity_trend]]);
     const fc = s.sources && s.sources.forecast;
     if (fc && fc.ok && fc.prob != null) facts.push(['סיכוי לגשם, 3 שעות', fc.prob + '%']);
+    const BOOST = {forecast: 'תחזית מזג אוויר', ims: 'תחנת מדידה'};
+    if (BOOST[s.boost]) facts.push(['אושר גם לפי', BOOST[s.boost]]);
     if (s.forecast_agree != null) facts.push(['תחזית מזג אוויר', s.forecast_agree ? 'מאשרת' : 'לא מאשרת']);
     $('facts').innerHTML = facts.map(f => `<div><dt>${esc(f[0])}</dt><dd>${esc(f[1])}</dd></div>`).join('');
     $('facts').hidden = false;
   }
-  const warn = s.radar_down_since ? `המכ״ם לא זמין מאז ${hm(new Date(s.radar_down_since))}. הבוט ממשיך לפי מקורות אחרים ככל שאפשר.` : '';
+  const warn = s.radar_down_since && s.stage ? `המכ״ם לא זמין מאז ${hm(new Date(s.radar_down_since))}. הבוט ממשיך לפי מקורות אחרים ככל שאפשר.` : '';
   $('warn').textContent = warn; $('warn').hidden = !warn;
   renderSources(s.sources);
-  $('foot').innerHTML = `עודכן ב-${bdi(hm(new Date(s.updated)))} · תמונת מכ״ם מ-${bdi(hm(new Date(s.radar)))}`;
+  $('foot').innerHTML = `עודכן ב-${bdi(hm(new Date(s.updated)))} ${s.radar ? ` · תמונת מכ״ם מ-${bdi(hm(new Date(s.radar)))}` : ''}`;
   $('ver').innerHTML = `בוט התראות גשם · גרסה ${bdi(s.version || '-')}`;
   renderAlerts((s.alerts || []).slice().reverse().slice(0, 10));
   drawTrend(s.trend || []);
