@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-בוט התראות גשם לגבעת שמואל - גרסה 2.6 בטא (מבוסס מכ"ם)
+בוט התראות גשם לגבעת שמואל - גרסה 3.0 בטא (מבוסס מכ"ם)
 
 זרימה:
   1. מושך מ-RainViewer את 4 פריימי המכ"ם האחרונים (10 דקות בין פריים לפריים).
@@ -15,6 +15,16 @@
      הגולמי (בלי מחיקת תאים קטנים), ומקבלים וקטור תנועה וזמן הגעה משלהם.
   6. שולח התראה בטלגרם עם תמונת מכ"ם, לפי שלבים (early / imminent / now),
      פעם אחת לכל אירוע. מסלול המערכות (ים) מחמיר, מסלול התאים קצר ורגיש יותר.
+
+חדש ב-3.0 (לפי רשם הגלאי של אוקטובר-נובמבר 2026):
+  - השתקה: אחרי "כעת" לא נחסמות יותר התראות מוקדמות ל-90 דקות. אם הגשם מעל הגבעה
+    נגמר (NOW_CLEAR_MIN) ומזוהה גל חדש, נשלחת התראה מיד. אירוע נמשך רק כל עוד
+    יש זיהוי שעובר את סף ההתראה.
+  - כפילויות: לא נשלחת אותה התראה פעמיים על אותו פריים מכ"ם, ו-ReadTimeout של
+    טלגרם נחשב "כנראה נשלח" (בלי הודעה שנייה).
+  - מסלול תאים: התראה מוקדמת/מיידית מתא דורשת 3 פריימים עקביים; "כעת" מתא דורש
+    3 פריימים או שיא חזק; מהירות תא שסותרת את תנועת המערכת מוחלפת בתנועת המערכת.
+  - לוג: כל ריצה רושמת למה התראה לא נשלחה (hold) או למה כן (sent_why).
 
 שימוש:
   python bot.py                 # ריצה רגילה
@@ -50,7 +60,7 @@ STATE_FILE = os.path.join(STATE_DIR, "state.json")
 HISTORY_FILE = os.path.join(STATE_DIR, "history.jsonl")
 HISTORY_MAX_LINES = 3000
 
-VERSION = "2.7-beta"
+VERSION = "3.0-beta"
 TZ = ZoneInfo("Asia/Jerusalem")
 
 TARGET_LAT, TARGET_LON = 32.0780, 34.8470
@@ -105,14 +115,24 @@ CELL_MAX_SPEED_KMH = 90.0 # מגבלת התאמה בין פריימים
 CELL_MIN_APPROACH_KMH = 5.0
 CELL_HIT_BASE_KM = 4.0    # "פגיעה": מרחק מסלול התא מהגבעה <= רדיוס התא + זה + תוספת
 CELL_HIT_SPREAD = 0.10    # תוספת אי-ודאות לפי המרחק
-MIN_SCORE_CELL = 2        # תא שנצפה בשני פריימים = 2, שלושה פריימים עקביים = 3
+# ציון: תא שנצפה בשני פריימים = 2, שלושה פריימים עקביים = 3.
+# 3.0: מוקדמת/מיידית מתא דורשת 3 (שורה 20 באקסל: תא של 2 פריימים, מהירות כפולה, איחור כבד).
+# "כעת" מתא דורש 3, או 2 אם השיא חזק (שורה 21: הד של 23 dBZ ב-2 פריימים, לא ירד גשם).
+MIN_SCORE_CELL = 3
+MIN_SCORE_CELL_NOW_STRONG = 2
+CELL_NOW_STRONG_DBZ = 28.0
+# בדיקת סבירות מול התנועה הכללית (שורות 20, 22): אם המערכת נעה בעקביות ומסלול התא
+# סותר אותה, משתמשים בוקטור המערכת במקום בוקטור התא
+CELL_SANITY_SPEED_RATIO = 1.6
+CELL_SANITY_ANGLE_DEG = 60.0
 
 # חשד לפספוס: הד קרוב בלי התראה => נשמרת תמונה לבדיקה
 SUSPICIOUS_RADIUS_KM = 10.0
 SUSPICIOUS_MIN_CELLS = 2
 SUSPICIOUS_MIN_DBZ = 20.0
 COOLDOWN_MIN = 90        # חזרה על אותו שלב באותו אירוע
-EPISODE_GAP_MIN = 60     # בלי גשם חזוי/קיים כל כך הרבה זמן = אירוע חדש
+EPISODE_GAP_MIN = 60     # בלי זיהוי שעובר את סף ההתראה כל כך הרבה זמן = אירוע חדש
+NOW_CLEAR_MIN = 20       # 3.0: אחרי "כעת", כך הרבה זמן בלי גשם מעל הגבעה = גל חדש מותר להתריע
 
 # סכמת Universal Blue (גשם), dBZ 15..64, ועוד 65 ו-75+
 _UB_HEX = (
@@ -449,21 +469,40 @@ def track_cells(cells_pf, times):
     return [t for t in tracks if t[-1][0] == last]
 
 
-def evaluate_track(tr, times):
-    """בודק מסלול תא אחד. info["why"] הוא None אם התא מתאים להתראה, אחרת סיבת הדחייה"""
+def angle_diff(ax, ay, bx, by):
+    """הפרש כיוונים במעלות (0-180) בין שני וקטורים"""
+    return abs((math.degrees(math.atan2(ax, ay) - math.atan2(bx, by)) + 180) % 360 - 180)
+
+
+def reliable_motion(motion):
+    """תנועה כללית שאפשר לסמוך עליה לבדיקת סבירות של תאים"""
+    return bool(motion and motion["consistent"] and motion["quality"] >= 0.4
+                and motion["speed"] >= MIN_SPEED_KMH)
+
+
+def evaluate_track(tr, times, gmotion=None):
+    """בודק מסלול תא אחד. info["why"] הוא None אם התא מתאים להתראה, אחרת סיבת הדחייה.
+    gmotion: התנועה הכללית ממסלול המערכות (לבדיקת סבירות), או None"""
     (i0, c0), (i1, c1) = tr[0], tr[-1]
     dt_h = (times[i1] - times[i0]) / 3600.0
     vx, vy = (c1["x"] - c0["x"]) / dt_h, (c1["y"] - c0["y"]) / dt_h
     speed = math.hypot(vx, vy)
     dist = math.hypot(c1["x"], c1["y"])
     info = {"why": None, "dist": dist, "peak": c1["peak"], "area": c1["area"], "n": len(tr),
-            "speed": speed, "vx": vx, "vy": vy, "r": c1["r"], "eta_min": None}
+            "speed": speed, "vx": vx, "vy": vy, "r": c1["r"], "eta_min": None, "adj": False}
     if c1["peak"] < CELL_PEAK_DBZ:
         info["why"] = "weak"
         return info
     if speed < CELL_MIN_APPROACH_KMH:
-        info["why"] = "still"
+        info["why"] = "still"          # תא עומד: הגנה מהדי קרקע, גם כשהמערכת זזה
         return info
+    if reliable_motion(gmotion):
+        gs = gmotion["speed"]
+        ratio = speed / gs
+        if (ratio > CELL_SANITY_SPEED_RATIO or ratio < 1.0 / CELL_SANITY_SPEED_RATIO
+                or angle_diff(vx, vy, gmotion["vx"], gmotion["vy"]) > CELL_SANITY_ANGLE_DEG):
+            vx, vy, speed = gmotion["vx"], gmotion["vy"], gs
+            info.update(vx=vx, vy=vy, speed=speed, adj=True)
     if dist <= c1["r"] + NOW_RADIUS_KM:
         info["eta_min"] = 0.0                      # התא כבר מעל הגבעה
     else:
@@ -481,9 +520,12 @@ def evaluate_track(tr, times):
         if info["eta_min"] > CELL_MAX_ETA_MIN:
             info["why"] = "far"
             return info
-    # ציון: 3 אם המסלול נצפה ב-3+ פריימים והתנועה האחרונה תואמת לכללית
+    # ציון: 3 אם המסלול נצפה ב-3+ פריימים והתנועה האחרונה תואמת לכללית.
+    # תא שהמהירות שלו הוחלפה בזו של המערכת: 3 אם נצפה ב-3+ פריימים (התנועה כבר עקבית)
     info["score"] = 2
-    if len(tr) >= 3:
+    if info["adj"]:
+        info["score"] = 3 if len(tr) >= 3 else 2
+    elif len(tr) >= 3:
         (ia, ca), (ib, cb) = tr[-2], tr[-1]
         h = (times[ib] - times[ia]) / 3600.0
         lx, ly = (cb["x"] - ca["x"]) / h, (cb["y"] - ca["y"]) / h
@@ -494,37 +536,56 @@ def evaluate_track(tr, times):
     return info
 
 
-def analyze_cells(fields, times):
-    """מסלול התאים: מחזיר {"alert": התראה או None, "dbg": סיכום ללוג, "draw": תאים לציור}"""
+def cell_min_score(stage, peak):
+    """הציון הנדרש להתראת תא לפי השלב"""
+    if stage == "now" and peak >= CELL_NOW_STRONG_DBZ:
+        return MIN_SCORE_CELL_NOW_STRONG
+    return MIN_SCORE_CELL
+
+
+def cell_stage(eta):
+    return "now" if eta == 0 else ("imminent" if eta <= IMMINENT_MIN else "early")
+
+
+def analyze_cells(fields, times, gmotion=None):
+    """מסלול התאים: מחזיר {"alert": התראה או None, "dbg": סיכום ללוג, "draw": תאים לציור}.
+    alert מוחזר רק אם התא עובר את הציון הנדרש לשלב שלו"""
     cells_pf = [extract_cells(f) for f in fields]
     out = {"alert": None, "dbg": None, "draw": []}
     latest = cells_pf[-1]
     if not latest:
         return out
     tracks = track_cells(cells_pf, times)
-    infos = [evaluate_track(t, times) for t in tracks]
+    infos = [evaluate_track(t, times, gmotion) for t in tracks]
     tracked_ids = {id(t[-1][1]) for t in tracks}
     out["draw"] = ([{"x": i["x"], "y": i["y"], "r": i["r"], "vx": i["vx"], "vy": i["vy"]}
                     for i in ({**inf, "x": t[-1][1]["x"], "y": t[-1][1]["y"]} for inf, t in zip(infos, tracks))]
                    + [{"x": c["x"], "y": c["y"], "r": c["r"], "vx": None, "vy": None}
                       for c in latest if id(c) not in tracked_ids])
+    for i in infos:
+        if i["why"] is None:
+            i["stage"] = cell_stage(i["eta_min"])
+            i["min_score"] = cell_min_score(i["stage"], i["peak"])
+            if i["score"] < i["min_score"]:
+                i["why"] = "low_score"
     good = [i for i in infos if i["why"] is None]
     if good:
         best = min(good, key=lambda i: i["eta_min"])
         eta = best["eta_min"]
         lo, hi = int(round(eta / SPEED_UNCERTAINTY[0])), int(round(eta / SPEED_UNCERTAINTY[1]))
-        out["alert"] = {"stage": "now" if eta == 0 else ("imminent" if eta <= IMMINENT_MIN else "early"),
+        out["alert"] = {"stage": best["stage"], "min_score": best["min_score"],
                         "eta": (lo, hi), "eta_mid": int(round(eta)), "score": best["score"],
                         "dist": best["dist"], "edge_km": max(0.0, best["dist"] - best["r"]),
                         "peak": best["peak"], "area_km2": best["area"] * CELL_KM ** 2,
-                        "vx": best["vx"], "vy": best["vy"], "speed": best["speed"], "n": best["n"]}
+                        "vx": best["vx"], "vy": best["vy"], "speed": best["speed"], "n": best["n"],
+                        "adj": best["adj"]}
         out["dbg"] = {"why": "ok", "d": round(best["dist"], 1), "pk": round(best["peak"]), "n": best["n"],
-                      "v": round(best["speed"])}
+                      "v": round(best["speed"]), "adj": best["adj"]}
         return out
     if infos:
         near = min(infos, key=lambda i: i["dist"])
         out["dbg"] = {"why": near["why"], "d": round(near["dist"], 1), "pk": round(near["peak"]),
-                      "n": near["n"], "v": round(near["speed"])}
+                      "n": near["n"], "v": round(near["speed"]), "adj": near["adj"]}
     else:
         c = min(latest, key=lambda c: math.hypot(c["x"], c["y"]))
         out["dbg"] = {"why": "no_track", "d": round(math.hypot(c["x"], c["y"]), 1), "pk": round(c["peak"]),
@@ -537,7 +598,7 @@ def analyze(fields, times):
     res = analyze_system(fields, times)
     res.update(src="system" if res["stage"] else None, min_score=MIN_SCORE_SYSTEM,
                motion_used=res["motion"], cell=None)
-    cell = analyze_cells(fields, times)
+    cell = analyze_cells(fields, times, res["motion"])
     res["cell_dbg"], res["cell_draw"] = cell["dbg"], cell["draw"]
     c = cell["alert"]
     if c:
@@ -545,7 +606,7 @@ def analyze(fields, times):
         if not sys_ok or STAGE_RANK[c["stage"]] > STAGE_RANK[res["stage"]]:
             res.update(src="cell", stage=c["stage"], eta=c["eta"], eta_mid=c["eta_mid"],
                        front_km=c["edge_km"], peak_dbz=c["peak"], cluster_km2=c["area_km2"],
-                       score=c["score"], checks={}, min_score=MIN_SCORE_CELL, cell=c,
+                       score=c["score"], checks={}, min_score=c["min_score"], cell=c,
                        motion_used={"vx": c["vx"], "vy": c["vy"], "speed": c["speed"]})
     return res
 
@@ -586,16 +647,48 @@ def parse_ts(s):
         return None
 
 
-def should_send(state, stage, now):
+def send_decision(state, stage, now, radar_iso=None):
+    """האם לשלוח התראה בשלב stage. מחזיר (שולחים?, סיבה). הסיבה נרשמת בלוג:
+    first / new_episode / escalation / new_wave / cooldown_over  -> שולחים
+    same_frame / cooldown                                      -> לא שולחים"""
     last = parse_ts(state.get("last_alert"))
     if last is None:
-        return True
+        return True, "first"
+    last_stage = state.get("last_stage")
+    rank, last_rank = STAGE_RANK[stage], STAGE_RANK.get(last_stage, 0)
+    if radar_iso and state.get("last_alert_radar") == radar_iso and rank <= last_rank:
+        return False, "same_frame"                    # ריצה כפולה על אותו פריים (שורות 16-17)
     seen = parse_ts(state.get("last_rain_seen"))
     if seen is None or now - seen > timedelta(minutes=EPISODE_GAP_MIN):
-        return True                                   # אירוע חדש
-    if STAGE_RANK[stage] > STAGE_RANK.get(state.get("last_stage"), 0):
-        return True                                   # החמרה: early -> imminent -> now
-    return now - last >= timedelta(minutes=COOLDOWN_MIN)
+        return True, "new_episode"
+    if rank > last_rank:
+        return True, "escalation"                     # החמרה: early -> imminent -> now
+    if last_stage == "now" and stage != "now":
+        # הגשם מעל הגבעה נגמר וגל חדש מתקרב (שורות 23-24): לא מחכים לסוף ההשתקה
+        now_seen = parse_ts(state.get("last_now_seen")) or last
+        if now - now_seen >= timedelta(minutes=NOW_CLEAR_MIN):
+            return True, "new_wave"
+    if now - last >= timedelta(minutes=COOLDOWN_MIN):
+        return True, "cooldown_over"
+    return False, "cooldown"
+
+
+def update_state(state, res, now, radar_time, sent, delivery=None):
+    """מעדכן את המצב אחרי ריצה (בלי לשמור לקובץ)"""
+    stage = res["stage"]
+    if qualifies(res):
+        state["last_rain_seen"] = now.isoformat()    # רק זיהוי שעובר את הסף ממשיך את האירוע
+        if stage == "now":
+            state["last_now_seen"] = now.isoformat()
+    if sent:
+        state.update(last_alert=now.isoformat(), last_stage=stage,
+                     last_alert_radar=radar_time.isoformat(timespec="seconds"))
+        alert = {"t": now.isoformat(timespec="seconds"), "stage": stage,
+                 "src": res["src"], "eta": res["eta"], "score": res["score"]}
+        if delivery and delivery != "ok":
+            alert["delivery"] = delivery
+        state["alerts"] = (state.get("alerts", []) + [alert])[-15:]
+    return state
 
 
 def write_status(res, summary, state, radar_time, now):
@@ -626,6 +719,15 @@ def qualifies(res):
     return res["stage"] is not None and res["score"] >= res["min_score"]
 
 
+def arrival_text(now, lo, hi):
+    """חלון ההגעה בשעון: "בין 21:00 ל-21:20", או "סביב 21:05" כשהטווח צר.
+    3.0: במקום אמצע הטווח בלבד (שורות 5-6: הגשם הגיע בתחילת הטווח)"""
+    a, b = (now + timedelta(minutes=lo)).strftime("%H:%M"), (now + timedelta(minutes=hi)).strftime("%H:%M")
+    if abs(hi - lo) < 5:
+        return f"סביב {(now + timedelta(minutes=(lo + hi) / 2)).strftime('%H:%M')}"
+    return f"בין {a} ל-{b}"
+
+
 def build_message(res, radar_time, now):
     src = res.get("src") or "system"
     m = res.get("motion_used")
@@ -642,10 +744,10 @@ def build_message(res, radar_time, now):
     if res["stage"] != "now":
         lo, hi = (max(0, int(round(x - age_min))) for x in res["eta"])
         eta = f"כ-<b>{lo} דקות</b>" if abs(hi - lo) < 5 else f"כ-<b>{lo}-{hi} דקות</b>"
-        arrival = (now + timedelta(minutes=(lo + hi) / 2)).strftime("%H:%M")
+        arrival = arrival_text(now, lo, hi)
         frm = compass((math.degrees(math.atan2(m["vx"], m["vy"])) + 180) % 360)
         label = "מרחק התא" if src == "cell" else "קצה החזית"
-        lines += [f"⏱️ <b>זמן הגעה:</b> {eta} (סביב {arrival})",
+        lines += [f"⏱️ <b>זמן הגעה:</b> {eta} ({arrival})",
                   f"🧭 <b>מגיע מכיוון:</b> {frm}, ~{m['speed']:.0f} קמ\"ש",
                   f"📏 <b>{label}:</b> כ-{res['front_km']:.0f} ק\"מ מהגבעה"]
     dbz = res.get("peak_dbz", THRESH_DBZ)
@@ -663,38 +765,46 @@ def build_message(res, radar_time, now):
     return "\n".join(lines)
 
 
+# תוצאות שליחה: "ok" נשלח, "maybe" כנראה נשלח (ReadTimeout: טלגרם קיבל את הבקשה אבל
+# התשובה לא חזרה בזמן), "fail" לא נשלח. על "maybe" לא שולחים שוב (שורות 16-17 באקסל)
+
+def _post_telegram(method, label, **kw):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{method}"
+    try:
+        res = requests.post(url, **kw)
+        if res.status_code != 200:
+            print(f"שגיאה ב{label}: {res.status_code} {res.text[:200]}")
+            return "fail"
+        return "ok"
+    except requests.exceptions.ReadTimeout:
+        print(f"ב{label}: ReadTimeout - ההודעה כנראה נשלחה, לא שולחים שוב")
+        return "maybe"
+    except requests.RequestException as e:
+        print(f"שגיאה ב{label}: {type(e).__name__}")   # ההודעה המלאה כוללת את הטוקן
+        return "fail"
+
+
 def send_telegram(message):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML",
                "disable_web_page_preview": True}
-    try:
-        res = requests.post(url, json=payload, timeout=10)
-        if res.status_code != 200:
-            print(f"שגיאה בשליחה לטלגרם: {res.status_code} {res.text[:200]}")
-            return False
-        return True
-    except requests.RequestException as e:
-        print(f"שגיאה בשליחה לטלגרם: {type(e).__name__}")   # ההודעה המלאה כוללת את הטוקן
-        return False
+    return _post_telegram("sendMessage", "שליחה לטלגרם", json=payload, timeout=10)
 
 
 def send_telegram_photo(png_bytes, caption=""):
-    """שולח תמונה עם כיתוב. מחזיר False גם אם הכיתוב ארוך מדי, ואז שולחים הודעת טקסט רגילה"""
+    """שולח תמונה עם כיתוב. מחזיר "fail" גם אם הכיתוב ארוך מדי, ואז שולחים הודעת טקסט רגילה"""
     if len(caption) > 1000:
-        return False
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+        return "fail"
     data = {"chat_id": TELEGRAM_CHAT_ID}
     if caption:
         data.update(caption=caption, parse_mode="HTML")
-    try:
-        res = requests.post(url, data=data, files={"photo": ("radar.png", png_bytes, "image/png")}, timeout=20)
-        if res.status_code != 200:
-            print(f"שגיאה בשליחת תמונה לטלגרם: {res.status_code} {res.text[:200]}")
-            return False
-        return True
-    except requests.RequestException as e:
-        print(f"שגיאה בשליחת תמונה לטלגרם: {type(e).__name__}")
-        return False
+    return _post_telegram("sendPhoto", "שליחת תמונה לטלגרם", data=data,
+                          files={"photo": ("radar.png", png_bytes, "image/png")}, timeout=20)
+
+
+def deliver(png_bytes, msg):
+    """תמונה עם כיתוב, ואם נכשלה בוודאות - טקסט. מחזיר ok / maybe / fail"""
+    r = send_telegram_photo(png_bytes, msg)
+    return r if r != "fail" else send_telegram(msg)
 
 
 # ------------------------------------------------------------------ תמונת מכ"ם
@@ -780,13 +890,26 @@ def run(dry_run=False, png=None):
     sent = False
     stage = res["stage"]
     png_bytes = None
-    if qualifies(res):
+    delivery, hold, sent_why = None, None, None
+    radar_iso = radar_time.isoformat(timespec="seconds")
+    if stage is None:
+        hold = "no_rain"
+    elif not qualifies(res):
+        hold = "low_score"
+    else:
         msg = build_message(res, radar_time, now)
+        go, why = send_decision(state, stage, now, radar_iso)
         if dry_run:
             print(msg)
-        elif should_send(state, stage, now):
+            print(f"[dry-run] לפי המצב השמור ההתראה {'הייתה נשלחת' if go else 'לא הייתה נשלחת'} ({why})")
+            hold = "dry_run"
+        elif not go:
+            hold = why
+        else:
             png_bytes = render_png(raw, res, radar_time)
-            sent = send_telegram_photo(png_bytes, msg) or send_telegram(msg)
+            delivery = deliver(png_bytes, msg)
+            sent = delivery != "fail"
+            sent_why, hold = (why, None) if sent else (None, "send_failed")
 
     # תמונה לבדיקה: בכל התראה שנשלחה, ובכל חשד לפספוס (הד קרוב בלי התראה)
     suspicious = (not sent) and res["diag"]["raw20_10km"] >= SUSPICIOUS_MIN_CELLS
@@ -805,16 +928,13 @@ def run(dry_run=False, png=None):
                "score": res["score"],
                "speed": round(m["speed"], 1) if m else None,
                "heading": round(math.degrees(math.atan2(m["vx"], m["vy"])) % 360) if m else None,
-               **res["diag"], "cell": res["cell_dbg"], "sent": sent}
+               **res["diag"], "cell": res["cell_dbg"], "sent": sent, "hold": hold, "sent_why": sent_why}
+    if delivery and delivery != "ok":
+        summary["delivery"] = delivery
     print(json.dumps(summary, ensure_ascii=False))
 
     if not dry_run:
-        if stage is not None:
-            state["last_rain_seen"] = now.isoformat()
-        if sent:
-            state.update(last_alert=now.isoformat(), last_stage=stage)
-            state["alerts"] = (state.get("alerts", []) + [{"t": now.isoformat(timespec="seconds"), "stage": stage,
-                               "src": res["src"], "eta": res["eta"], "score": res["score"]}])[-15:]
+        update_state(state, res, now, radar_time, sent, delivery)
         atomic_write(STATE_FILE, json.dumps(state))
         append_history(summary)
         write_status(res, summary, state, radar_time, now)
@@ -828,8 +948,9 @@ if __name__ == "__main__":
     ap.add_argument("--test-telegram", action="store_true", help="שולח הודעת בדיקה ותמונת בדיקה וסיים")
     a = ap.parse_args()
     if a.test_telegram:
-        ok = send_telegram(f"✅ בדיקת חיבור: בוט הגשם {VERSION} מחובר לטלגרם.")
-        ok_img = send_telegram_photo(render_png(np.zeros(XX.shape, np.float32), {}, None), "🖼️ בדיקת שליחת תמונה")
+        ok = send_telegram(f"✅ בדיקת חיבור: בוט הגשם {VERSION} מחובר לטלגרם.") == "ok"
+        ok_img = send_telegram_photo(render_png(np.zeros(XX.shape, np.float32), {}, None),
+                                     "🖼️ בדיקת שליחת תמונה") == "ok"
         print("ההודעה נשלחה" if ok else "שליחת ההודעה נכשלה", "| התמונה נשלחה" if ok_img else "| שליחת התמונה נכשלה")
         sys.exit(0 if (ok and ok_img) else 1)
     sys.exit(run(a.dry_run, a.png))
