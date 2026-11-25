@@ -11,7 +11,8 @@ from .config import (BASE_RADIUS_KM, CELL_DECAY_DBZ, CELL_DECAY_MAX_PEAK, CELL_H
                      MIN_CELLS, MIN_CORR, MIN_SCORE_CELL, MIN_SCORE_CELL_NOW_STRONG, MIN_SCORE_SYSTEM,
                      MIN_SPEED_KMH, NOW_RADIUS_KM, PERSIST_MIN_CELLS, POPUP_CLEAR_DBZ, POPUP_EDGE_KM,
                      POPUP_MAX_SPEED_KMH, POPUP_PEAK_DBZ, SPEED_UNCERTAINTY, SPREAD_PER_KM, STAGE_RANK,
-                     STEP_MIN, SUSPICIOUS_MIN_DBZ, SUSPICIOUS_RADIUS_KM, THRESH_DBZ, TREND_DBZ)
+                     STEP_MIN, SUSPICIOUS_MIN_DBZ, SUSPICIOUS_RADIUS_KM, THRESH_DBZ, TREND_DBZ,
+                     WATCH_MAX_MIN)
 from .radar import XX, YY
 
 
@@ -133,12 +134,12 @@ def dbz_to_mmh(dbz):
 
 def intensity_label(dbz):
     if dbz >= 46:
-        return "⛈️ עז מאוד (ייתכנו רעמים/ברד)"
+        return "גשם עז מאוד, ייתכנו ברקים וברד"
     if dbz >= 38:
-        return "🌧️ חזק"
+        return "גשם חזק"
     if dbz >= 28:
-        return "🌦️ בינוני"
-    return "🌦️ קל"
+        return "גשם בינוני"
+    return "גשם קל"
 
 
 # ------------------------------------------------------------------ מגמת עוצמה (3.1)
@@ -237,14 +238,25 @@ def analyze_system(fields, times):
     if res.get("peaks"):
         res["trend"] = classify_trend(res["peaks"])
 
-    if res["stage"]:
-        persistent = sum(1 for c in cleaned if (c > 0).sum() >= PERSIST_MIN_CELLS)
-        res["checks"] = {
-            "motion": bool(res["stage"] == "now" or (motion and motion["consistent"] and motion["quality"] >= 0.4)),
+    persistent = sum(1 for c in cleaned if (c > 0).sum() >= PERSIST_MIN_CELLS)
+
+    def checks(stage):
+        return {
+            "motion": bool(stage == "now" or (motion and motion["consistent"] and motion["quality"] >= 0.4)),
             "size": res["cluster_km2"] >= MIN_ALERT_AREA_KM2,
             "persist": persistent >= 3,
         }
+
+    res["watch"] = None
+    if res["stage"]:
+        res["checks"] = checks(res["stage"])
         res["score"] = sum(res["checks"].values())
+    elif res.get("eta_mid") is not None and res["eta_mid"] <= WATCH_MAX_MIN:
+        # 3.2: מועמד ל"מעקב" (45-90 דקות). לא שלב התראה: ההחלטה ב-alerts.watch_decision
+        ch = checks("early")
+        res["watch"] = {"eta": res["eta"], "eta_mid": res["eta_mid"], "score": sum(ch.values()), "checks": ch,
+                        "quality": motion["quality"], "peak_dbz": res["peak_dbz"], "front_km": res["front_km"],
+                        "cluster_km2": res["cluster_km2"], "trend": res.get("trend")}
 
     return res
 

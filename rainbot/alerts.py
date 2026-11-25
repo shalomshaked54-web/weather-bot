@@ -4,8 +4,10 @@ from datetime import timedelta
 from . import forecast as fcst
 from . import ims
 from .config import (CELL_MIN_DBZ, COOLDOWN_MIN, EPISODE_GAP_MIN, FORECAST_BOOST_MM, FORECAST_BOOST_PROB,
-                     HEADSUP_AFTER_ALERT_H, HEADSUP_GAP_H, HEADSUP_MM, HEADSUP_PROB, NOW_CLEAR_MIN,
-                     RADAR_DOWN_ALERT_MIN, RAIN_END_CLEAR_MIN, RAIN_END_MAX_AGE_H, STAGE_RANK)
+                     HEADSUP_AFTER_ALERT_H, HEADSUP_GAP_H, HEADSUP_MM, HEADSUP_PROB, HEAVY_DBZ,
+                     HEAVY_PREV_MAX_DBZ, NOW_CLEAR_MIN, RADAR_DOWN_ALERT_MIN, RAIN_END_CLEAR_MIN,
+                     RAIN_END_MAX_AGE_H, STAGE_RANK, WATCH_AFTER_ALERT_MIN, WATCH_GAP_MIN, WATCH_MIN_AREA_KM2,
+                     WATCH_MIN_QUALITY)
 from .storage import parse_ts
 
 
@@ -13,9 +15,9 @@ def qualifies(res):
     return res["stage"] is not None and res["score"] >= res["min_score"]
 
 
-def send_decision(state, stage, now, radar_iso=None):
+def send_decision(state, stage, now, radar_iso=None, peak=None):
     """האם לשלוח התראה בשלב stage. מחזיר (שולחים?, סיבה). הסיבה נרשמת בלוג:
-    first / new_episode / escalation / new_wave / cooldown_over  -> שולחים
+    first / new_episode / escalation / new_wave / intensify / cooldown_over  -> שולחים
     same_frame / cooldown                                      -> לא שולחים"""
     last = parse_ts(state.get("last_alert"))
     if last is None:
@@ -36,6 +38,10 @@ def send_decision(state, stage, now, radar_iso=None):
             return True, "new_wave"
     if now - last >= timedelta(minutes=COOLDOWN_MIN):
         return True, "cooldown_over"
+    # 3.2: באמצע הגשם הוא הפך לחזק, וההתראה האחרונה הייתה על גשם חלש/בינוני
+    if (stage == "now" and peak is not None and peak >= HEAVY_DBZ
+            and (state.get("last_alert_peak") or 0.0) <= HEAVY_PREV_MAX_DBZ):
+        return True, "intensify"
     return False, "cooldown"
 
 
@@ -48,7 +54,8 @@ def update_state(state, res, now, radar_time, sent, delivery=None):
             state["last_now_seen"] = now.isoformat()
     if sent:
         state.update(last_alert=now.isoformat(), last_stage=stage,
-                     last_alert_radar=radar_time.isoformat(timespec="seconds"))
+                     last_alert_radar=radar_time.isoformat(timespec="seconds"),
+                     last_alert_peak=res.get("peak_dbz"))
         if stage == "now":
             state["last_now_alert"] = now.isoformat()
         alert = {"t": now.isoformat(timespec="seconds"), "stage": stage,
@@ -73,6 +80,10 @@ def apply_sources(res, fc, gauge, radar_time):
     res["forecast_agree"] = None
     res["gauge_wet"] = ims.is_wet(gauge)
     stage = res["stage"]
+    w = res.get("watch")
+    if w:
+        t0, t1 = radar_time + timedelta(minutes=w["eta"][0]), radar_time + timedelta(minutes=w["eta"][1])
+        w["forecast_agree"] = fcst.rain_between(fc, t0, t1)
     if stage is None:
         return res
     if stage != "now" and res.get("eta"):
@@ -128,9 +139,10 @@ def headsup_decision(state, fsum, now, res):
     last_h = parse_ts(state.get("last_headsup"))
     if last_h and now - last_h < timedelta(hours=HEADSUP_GAP_H):
         return False
-    last_a = parse_ts(state.get("last_alert"))
-    if last_a and now - last_a < timedelta(hours=HEADSUP_AFTER_ALERT_H):
-        return False
+    for key in ("last_alert", "last_watch"):
+        last_a = parse_ts(state.get(key))
+        if last_a and now - last_a < timedelta(hours=HEADSUP_AFTER_ALERT_H):
+            return False
     return True
 
 
@@ -154,3 +166,25 @@ def mark_rain_end(state, now, delivered):
     if delivered:
         state["rain_end_for"] = state.get("last_now_seen")
         state["rain_ended_at"] = now.isoformat(timespec="seconds")
+
+
+def watch_ok(res):
+    """3.2: האם מועמד ה"מעקב" עומד בכל התנאים המחמירים"""
+    w = res.get("watch")
+    return bool(w and w["score"] >= 3 and w["quality"] >= WATCH_MIN_QUALITY
+                and w["cluster_km2"] >= WATCH_MIN_AREA_KM2 and w.get("trend") != "down"
+                and w.get("forecast_agree") is True)
+
+
+def watch_decision(state, res, now):
+    """3.2: "מעקב" - מערכת גשם בים, 45-90 דקות לפני הגעה. לכל היותר פעם ב-3 שעות, ולא אחרי התראה
+    רגילה ב-90 הדקות האחרונות (אז כבר יודעים)"""
+    if qualifies(res) or not watch_ok(res):
+        return False
+    lw = parse_ts(state.get("last_watch"))
+    if lw and now - lw < timedelta(minutes=WATCH_GAP_MIN):
+        return False
+    la = parse_ts(state.get("last_alert"))
+    if la and now - la < timedelta(minutes=WATCH_AFTER_ALERT_MIN):
+        return False
+    return True

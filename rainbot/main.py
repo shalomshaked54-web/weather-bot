@@ -111,8 +111,8 @@ def run(dry_run=False, png=None, save_frames=None):
     elif not alerts.qualifies(res):
         hold = "low_score"
     else:
-        msg = messages.build_message(res, radar_time, now, gauge)
-        go, why = alerts.send_decision(state, stage, now, radar_iso)
+        go, why = alerts.send_decision(state, stage, now, radar_iso, res.get("peak_dbz"))
+        msg = messages.build_message(res, radar_time, now, gauge, why)
         if dry_run:
             print(msg)
             print(f"[dry-run] לפי המצב השמור ההתראה {'הייתה נשלחת' if go else 'לא הייתה נשלחת'} ({why})")
@@ -128,6 +128,9 @@ def run(dry_run=False, png=None, save_frames=None):
     # ---------------------------------------------------------- הודעות נוספות (3.1)
     if not sent and alerts.rain_end_decision(state, res, now):
         alerts.mark_rain_end(state, now, out.text("rain_end", messages.rain_end_message(fsum)) in DELIVERED)
+    elif not sent and alerts.watch_decision(state, res, now):
+        if out.text("watch", messages.watch_message(res, radar_time, now)) in DELIVERED:
+            state["last_watch"] = now.isoformat(timespec="seconds")
     elif not sent and alerts.headsup_decision(state, fsum, now, res):
         if out.text("headsup", messages.headsup_message(fsum)) in DELIVERED:
             state["last_headsup"] = now.isoformat(timespec="seconds")
@@ -156,7 +159,10 @@ def run(dry_run=False, png=None, save_frames=None):
                **res["diag"], "cell": res["cell_dbg"], "sent": sent, "hold": hold, "sent_why": sent_why,
                "trend": res.get("trend"), "boost": res.get("boost"), "fc_agree": res.get("forecast_agree"),
                "fc_prob": (fsum or {}).get("prob"), "ims_mm": (gauge or {}).get("mm"),
-               "frames": len(frames)}
+               "frames": len(frames),
+               "watch": ({"eta": res["watch"]["eta"], "score": res["watch"]["score"],
+                          "fc": res["watch"].get("forecast_agree"), "ok": alerts.watch_ok(res)}
+                         if res.get("watch") else None)}
     if out.sent:
         summary["extra"] = out.sent
     if delivery and delivery != "ok":

@@ -434,7 +434,7 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(st["stage"], "early")
         self.assertEqual(st["intensity_trend"], "steady")
         with open(os.path.join(config.STATUS_DIR, "status.json")) as f:
-            self.assertEqual(json.load(f)["version"], "3.1-beta")
+            self.assertEqual(json.load(f)["version"], config.VERSION)
 
     def test_status_when_radar_is_down(self):
         now = at("2026-11-25T18:03:00")
@@ -471,7 +471,7 @@ class MessageTests(unittest.TestCase):
         gauge = {"ok": True, "mm": 0.4, "station": "בית דגן"}
         msg = messages.build_message(self.system_res(trend="up", forecast_agree=True), self.NOW, self.NOW, gauge)
         self.assertIn("מתחזק", msg)
-        self.assertIn("תחזית המודלים", msg)
+        self.assertIn("התחזית מסכימה", msg)
         self.assertIn("בית דגן", msg)
 
     def test_boost_is_shown(self):
@@ -483,8 +483,8 @@ class MessageTests(unittest.TestCase):
         r = self.system_res(stage="imminent", src="cell", front_km=4.0,
                             cell={"popup": True, "n": 2}, motion_used={"vx": 0.0, "vy": 0.0, "speed": 0.0})
         msg = messages.build_message(r, self.NOW, self.NOW)
-        self.assertIn("התפתח", msg)
-        self.assertNotIn("מגיע מכיוון", msg)
+        self.assertIn("נוצר", msg)
+        self.assertNotIn("מגיע מ", msg)
 
     def test_worst_case_caption_fits_telegram(self):
         r = self.system_res(stage="imminent", src="cell", cell={"n": 4}, trend="down", forecast_agree=False,
@@ -498,7 +498,7 @@ class MessageTests(unittest.TestCase):
         h = messages.headsup_message({"ok": True, "prob": 85, "mm_3h": 3.2, "next_rain": "2026-11-07T22:15+02:00"})
         self.assertIn("85%", h)
         self.assertIn("22:15", h)
-        self.assertIn("הפסיק", messages.rain_end_message({"ok": True, "prob": 70}))
+        self.assertIn("נגמר", messages.rain_end_message({"ok": True, "prob": 70}))
         self.assertIn("70%", messages.rain_end_message({"ok": True, "prob": 70}))
 
 

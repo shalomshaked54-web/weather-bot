@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 
-VERSION = "3.1-beta"
+VERSION = "3.2-beta"
 TZ = ZoneInfo("Asia/Jerusalem")
 
 # ------------------------------------------------------------------ סביבה
@@ -90,6 +90,18 @@ POPUP_EDGE_KM = 6.0
 POPUP_PEAK_DBZ = 30.0
 POPUP_MAX_SPEED_KMH = 10.0
 POPUP_CLEAR_DBZ = 20.0
+
+# 3.2: התראת "מעקב" - מערכת גשם בים שתגיע בעוד 45-90 דקות. רק בתנאים מחמירים:
+# ציון 3, תנועה איכותית, מערכת גדולה, לא נחלשת, והתחזית מסכימה שיירד גשם באותו זמן
+WATCH_MAX_MIN = 90
+WATCH_MIN_QUALITY = 0.5
+WATCH_MIN_AREA_KM2 = 200.0
+WATCH_GAP_MIN = 180          # לכל היותר פעם ב-3 שעות
+WATCH_AFTER_ALERT_MIN = 90   # לא אם כבר נשלחה התראה רגילה לאחרונה
+
+# 3.2: "הגשם מתחזק" - בזמן גשם, מעבר לגשם חזק (40+ dBZ) כשההתראה האחרונה הייתה על גשם חלש/בינוני
+HEAVY_DBZ = 40.0
+HEAVY_PREV_MAX_DBZ = 35.0
 
 # חשד לפספוס: הד קרוב בלי התראה => נשמרים תמונה ונתונים לבדיקה
 SUSPICIOUS_RADIUS_KM = 10.0

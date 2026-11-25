@@ -61,7 +61,8 @@ def decode_tile(png_bytes):
 
 def fetch_frames_index(session):
     data = http_get(session, API_URL).json()
-    past = data["radar"]["past"]
+    # 3.2: מיון וסינון כפילויות (לא סומכים על הסדר שבתשובה)
+    past = sorted({f["time"]: f for f in data["radar"]["past"] if f.get("path")}.values(), key=lambda f: f["time"])
     if len(past) < MIN_FRAMES:
         raise RuntimeError("פחות מ-3 פריימי מכ\"ם זמינים")
     return data["host"], past[-N_FRAMES:]
