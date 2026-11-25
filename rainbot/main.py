@@ -180,11 +180,14 @@ def run(dry_run=False, png=None, save_frames=None):
 
 
 def test_telegram():
-    ok = telegram.send_telegram(messages.test_message()) == "ok"
-    ok_img = telegram.send_telegram_photo(render_png(np.zeros(XX.shape, np.float32), {}, None),
-                                          "🖼️ בדיקת שליחת תמונה") == "ok"
-    print("ההודעה נשלחה" if ok else "שליחת ההודעה נכשלה", "| התמונה נשלחה" if ok_img else "| שליחת התמונה נכשלה")
-    return 0 if (ok and ok_img) else 1
+    """בדיקת חיבור. 3.2: ReadTimeout ("maybe") = טלגרם קיבל את הבקשה אבל ענה לאט. זו לא תקלה:
+    ההודעה כמעט תמיד מגיעה, ובהתראות אמיתיות הבוט מתייחס לזה כנשלח. לכן גם כאן זה לא נכשל"""
+    word = {"ok": "נשלחה", "maybe": "כנראה נשלחה (טלגרם ענה לאט)", "fail": "נכשלה"}
+    r_msg = telegram.send_telegram(messages.test_message())
+    r_img = telegram.send_telegram_photo(render_png(np.zeros(XX.shape, np.float32), {}, None),
+                                         "🖼️ בדיקת שליחת תמונה")
+    print(f"ההודעה {word.get(r_msg, r_msg)} | התמונה {word.get(r_img, r_img)}")
+    return 0 if (r_msg in DELIVERED and r_img in DELIVERED) else 1
 
 
 def main(argv=None):
