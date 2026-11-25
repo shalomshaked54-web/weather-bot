@@ -60,6 +60,11 @@ def read_trend(n=24):
     return trend
 
 
+def watch_ok(res):
+    from .alerts import watch_ok as _ok   # ייבוא מאוחר: alerts מייבא את storage
+    return _ok(res)
+
+
 def write_status(res, summary, state, radar_time, now, sources=None, active=False):
     """status.json: מה שהדשבורד מציג. השדות של 3.0 נשמרים בדיוק; שדות 3.1 כולם אופציונליים:
     sources, intensity_trend, forecast_agree, boost, radar_down_since, rain_ended_at.
@@ -83,7 +88,12 @@ def write_status(res, summary, state, radar_time, now, sources=None, active=Fals
               "forecast_agree": res.get("forecast_agree") if on else None,
               "boost": res.get("boost") if on else None,
               "radar_down_since": state.get("radar_fail_since"),
-              "rain_ended_at": None}
+              "rain_ended_at": None,
+              # 3.2: מערכת שבמעקב (45-90 דקות), רק כשאין התראה פעילה ועומדת בכל התנאים
+              "watch": None}
+    if res and not on and res.get("watch") and watch_ok(res):
+        w = res["watch"]
+        status["watch"] = {"eta": w["eta"], "peak_dbz": w["peak_dbz"], "front_km": round(w["front_km"], 1)}
     ended, last = parse_ts(state.get("rain_ended_at")), parse_ts(state.get("last_alert"))
     if ended and (last is None or ended > last):
         status["rain_ended_at"] = state["rain_ended_at"]
