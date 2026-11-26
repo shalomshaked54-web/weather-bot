@@ -553,12 +553,20 @@ class RunTests(unittest.TestCase):
         post.assert_not_called()
         self.assertEqual(self.history()[-1]["hold"], "no_rain")
 
+    def test_brief_radar_outage_is_not_a_failed_run(self):
+        """תקלה רגעית בהורדת המכ"ם: הריצה מצליחה (בלי מייל שגיאה מ-GitHub) ובלי הודעה בטלגרם"""
+        with mock.patch.object(main, "get_radar", return_value=(None, None, "הורדה נכשלה (ConnectionError)")), \
+                mock.patch.object(bot.requests, "post") as post:
+            self.assertEqual(main.run(), 0)
+        post.assert_not_called()
+        self.assertIn("radar_fail_since", storage.load_state())
+
     def test_radar_down_message_after_30_minutes(self):
         ok = mock.Mock(status_code=200)
         storage.save_state({"radar_fail_since": (datetime.now(TZ) - timedelta(minutes=40)).isoformat()})
         with mock.patch.object(main, "get_radar", return_value=(None, None, "HTTP 503")), \
                 mock.patch.object(bot.requests, "post", return_value=ok) as post:
-            self.assertEqual(main.run(), 1)
+            self.assertEqual(main.run(), 0)
         self.assertEqual(post.call_count, 1)
         self.assertIn("לא רואה מכ", post.call_args.kwargs["json"]["text"])
         self.assertTrue(storage.load_state()["radar_down_notified"])
