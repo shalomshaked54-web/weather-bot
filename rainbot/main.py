@@ -88,7 +88,10 @@ def run(dry_run=False, png=None, save_frames=None):
             storage.append_history(summary)
             radar_time = storage.parse_ts(state.get("last_radar"))
             storage.write_status(None, {}, state, radar_time, now, sources_status(False, None, fsum, gauge))
-        return 1
+        # תקלת מכ"ם היא מצב צפוי שהבוט מטפל בו בעצמו (נרשם בלוג ובדשבורד, והודעה בטלגרם אחרי
+        # RADAR_DOWN_ALERT_MIN דקות). לא מסמנים את הריצה כנכשלת, כדי שתקלה רגעית אצל RainViewer
+        # לא תשלח מייל "Run failed" מ-GitHub
+        return 0
 
     # ---------------------------------------------------------- ניתוח
     times = [f["time"] for f in frames]
