@@ -30,6 +30,16 @@ N_FRAMES = 4        # 4 פריימים = 30 דקות של היסטוריה
 MIN_FRAMES = 3      # 3.1: פריים שחסר לו אריח נזרק, וממשיכים כל עוד נשארו 3
 MAX_FRAME_AGE_MIN = 45
 
+# 3.2: מכ"ם השירות המטאורולוגי (ims_radar.py). גיבוי כברירת מחדל; RADAR_PRIMARY=ims הופך אותו לראשי
+RADAR_PRIMARY = os.environ.get("RADAR_PRIMARY", "rainviewer")
+IMS_RADAR_ENABLED = os.environ.get("IMS_RADAR", "1") != "0"
+IMS_RADAR_INDEX = "https://ims.gov.il/he/radar_satellite"
+IMS_RADAR_BASE = "https://ims.gov.il"
+# גבולות התמונה כפי שהאתר מציג אותה ב-Leaflet: [[lat, lon], [lat, lon]]
+IMS_RADAR_BOUNDS = ((34.5318966003582659, 37.864813247553009), (29.4468656950938161, 31.7662931774178858))
+IMS_RADAR_STEP_MIN = 10      # בוחרים פריים כל 10 דקות (4 פריימים = 30 דקות, כמו RainViewer)
+RADAR_STALE_SWITCH_MIN = 15  # RainViewer ישן מהמכ"ם הישראלי ביותר מזה -> עוברים לישראלי
+
 # רשת עבודה מקומית (ק"מ ממזרח / מצפון לגבעת שמואל)
 CELL_KM = 2.0
 X_RANGE = (-140.0, 30.0)
