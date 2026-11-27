@@ -3,22 +3,71 @@ import argparse
 import json
 import math
 import os
+import subprocess
 import sys
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 
 import numpy as np
 import requests
 
-from . import alerts, forecast, ims, messages, storage, telegram
+from . import alerts, forecast, ims, ims_radar, learn, live, messages, storage, telegram
 from .analysis import analyze
-from .config import MAX_FRAME_AGE_MIN, OUT_DIR, SUSPICIOUS_MIN_CELLS, TZ, VERSION
-from .radar import XX, fetch_frames_index, load_fields
+from .config import (IMS_RADAR_ENABLED, MAX_FRAME_AGE_MIN, OUT_DIR, RADAR_PRIMARY, RADAR_STALE_SWITCH_MIN, STATE_DIR, STATUS_PUBLISH, STORM_HOLD_MIN, STORM_MIN_RUN_GAP_S,
+                     STORM_POLL_S, STORM_RADIUS_KM, STORM_TAIL_MIN, SUSPICIOUS_MIN_CELLS, TZ, VERSION)
+from .radar import XX, YY, fetch_frames_index, load_fields
 from .render import render_png
 
 DELIVERED = ("ok", "maybe")
 
 
+# 3.2: איזה מכ"ם שימש בריצה האחרונה, והשוואה בין שני המקורות (נרשם בלוג כ-ims_cmp)
+RADAR_INFO = {}
+
+
+def _quick_diag(fields, frames, now):
+    raw = fields[-1]
+    dist = np.hypot(XX, YY)
+    m = raw >= 20.0
+    return {"age": round((now.timestamp() - frames[-1]["time"]) / 60.0, 1),
+            "near": round(float(dist[m].min()), 1) if m.any() else None,
+            "at": bool(learn.point_wet(raw))}
+
+
 def get_radar(session, now):
+    """מחזיר (שדות, פריימים, None) או (None, None, הודעת שגיאה).
+    3.2: שני מקורות. הראשי (RADAR_PRIMARY, ברירת מחדל RainViewer) משמש כל עוד הוא תקין ולא ישן
+    מהשני ביותר מ-RADAR_STALE_SWITCH_MIN דקות; אחרת המכ"ם השני"""
+    RADAR_INFO.clear()
+    got = {"rainviewer": get_rainviewer(session, now)}
+    if IMS_RADAR_ENABLED and isinstance(session, requests.Session):
+        got["ims"] = get_ims_radar(session, now)
+    cmp = {k: (_quick_diag(v[0], v[1], now) if v[2] is None else {"err": v[2][:60]}) for k, v in got.items()}
+    order = [RADAR_PRIMARY] + [k for k in ("rainviewer", "ims") if k != RADAR_PRIMARY]
+    ok = [k for k in order if k in got and got[k][2] is None]
+    use = None
+    if ok:
+        use = ok[0]
+        if len(ok) > 1 and cmp[ok[0]]["age"] - cmp[ok[1]]["age"] >= RADAR_STALE_SWITCH_MIN:
+            use = ok[1]
+    RADAR_INFO.update(src=use, cmp=cmp if len(got) > 1 else None)
+    if use is None:
+        return got["rainviewer"] if RADAR_PRIMARY not in got else got[RADAR_PRIMARY]
+    return got[use]
+
+
+def get_ims_radar(session, now):
+    try:
+        fields, frames = ims_radar.get_fields(session)
+        age = (now.timestamp() - frames[-1]["time"]) / 60.0
+        if age > MAX_FRAME_AGE_MIN:
+            raise RuntimeError(f"הפריים האחרון ישן ({age:.0f} דקות)")
+        return fields, frames, None
+    except (RuntimeError, KeyError, ValueError, TypeError, IndexError, OSError, requests.RequestException) as e:
+        return None, None, str(e) or type(e).__name__
+
+
+def get_rainviewer(session, now):
     """מחזיר (שדות, פריימים, None) או (None, None, הודעת שגיאה)"""
     try:
         host, frames = fetch_frames_index(session)
@@ -65,6 +114,8 @@ def run(dry_run=False, png=None, save_frames=None):
 
     now = datetime.now(TZ)
     state = storage.load_state()
+    if learn.restore_from_status(state, os.path.join(STATE_DIR, "published_status.json")):
+        print("הלמידה שוחזרה מ-status.json")
     with requests.Session() as session:
         fields, frames, radar_err = get_radar(session, now)
         fc = forecast.get_forecast(session, state, now)
@@ -94,11 +145,13 @@ def run(dry_run=False, png=None, save_frames=None):
         return 0
 
     # ---------------------------------------------------------- ניתוח
+    messages.set_source(RADAR_INFO.get("src") or "rainviewer")
     times = [f["time"] for f in frames]
     radar_time = datetime.fromtimestamp(times[-1], TZ)
     radar_iso = radar_time.isoformat(timespec="seconds")
     age_min = (now - radar_time).total_seconds() / 60.0
-    res = analyze(fields, times)
+    res = analyze(fields, times, spread=learn.params(state)["system"]["spread"])
+    learn.apply(res, state)          # 3.2: תיקון זמני ההגעה לפי מה שנלמד מאירועים קודמים
     alerts.apply_sources(res, fc, gauge, radar_time)
     raw = fields[-1]
 
@@ -115,6 +168,8 @@ def run(dry_run=False, png=None, save_frames=None):
         hold = "low_score"
     else:
         go, why = alerts.send_decision(state, stage, now, radar_iso, res.get("peak_dbz"))
+        if not go and live.resume(state, now, why):
+            go, why = True, "resumed"     # 3.2: הגשם חזר אחרי "כבר לא צפוי"
         msg = messages.build_message(res, radar_time, now, gauge, why)
         if dry_run:
             print(msg)
@@ -128,9 +183,30 @@ def run(dry_run=False, png=None, save_frames=None):
             sent = delivery != "fail"
             sent_why, hold = (why, None) if sent else (None, "send_failed")
 
+    # ---------------------------------------------------------- הודעה חיה (3.2)
+    live_act = None
+    if not dry_run:
+        if sent:
+            live.remember(state, res, now, radar_iso, True)
+        else:
+            live_act = live.update(state, res, radar_time, now, radar_iso, gauge)
+
+    # ---------------------------------------------------------- למידה (3.2)
+    learn_ev = None
+    if not dry_run:
+        alert_times = [storage.parse_ts(a.get("t")) for a in state.get("alerts", [])]
+        if sent:
+            alert_times.append(now)
+        learn_ev = learn.observe(state, raw, radar_time, alert_times)
+        learn.record(state, res, radar_time, sent)
+
     # ---------------------------------------------------------- הודעות נוספות (3.1)
     if not sent and alerts.rain_end_decision(state, res, now):
-        alerts.mark_rain_end(state, now, out.text("rain_end", messages.rain_end_message(fsum)) in DELIVERED)
+        end_msg = "\n".join([messages.rain_end_message(fsum)] + learn.summary_lines(state))
+        delivered = out.text("rain_end", end_msg) in DELIVERED
+        alerts.mark_rain_end(state, now, delivered)
+        if delivered:
+            learn.mark_reported(state)
     elif not sent and alerts.watch_decision(state, res, now):
         if out.text("watch", messages.watch_message(res, radar_time, now)) in DELIVERED:
             state["last_watch"] = now.isoformat(timespec="seconds")
@@ -163,9 +239,22 @@ def run(dry_run=False, png=None, save_frames=None):
                "trend": res.get("trend"), "boost": res.get("boost"), "fc_agree": res.get("forecast_agree"),
                "fc_prob": (fsum or {}).get("prob"), "ims_mm": (gauge or {}).get("mm"),
                "frames": len(frames),
+               # 3.2: חיזוי לנקודה - סיכוי, טווח זמן ההתחלה, ומספר האזורים עם תנועה מקומית
+               "nc": ({k: res["nowcast"][k] for k in ("p", "eta", "eta_mid", "dur", "blocks")}
+                      if res.get("nowcast") else None),
                "watch": ({"eta": res["watch"]["eta"], "score": res["watch"]["score"],
                           "fc": res["watch"].get("forecast_agree"), "ok": alerts.watch_ok(res)}
                          if res.get("watch") else None)}
+    if RADAR_INFO.get("src") and RADAR_INFO["src"] != "rainviewer":
+        summary["radar_src"] = RADAR_INFO["src"]
+    if RADAR_INFO.get("cmp"):
+        summary["ims_cmp"] = RADAR_INFO["cmp"]
+    if live_act:
+        summary["live"] = live_act
+    if learn_ev:
+        summary["learn"] = learn_ev
+    if res.get("learn_scale") not in (None, 1.0):
+        summary["scale"] = res["learn_scale"]
     if out.sent:
         summary["extra"] = out.sent
     if delivery and delivery != "ok":
@@ -174,12 +263,88 @@ def run(dry_run=False, png=None, save_frames=None):
 
     if not dry_run:
         alerts.update_state(state, res, now, radar_time, sent, delivery)
+        if storm_weather(res):
+            state["storm_seen"] = now.isoformat(timespec="seconds")
         state["last_radar"] = radar_iso
         storage.save_state(state)
         storage.append_history(summary)
         storage.write_status(res, summary, state, radar_time, now,
                              sources_status(True, age_min, fsum, gauge), alerts.qualifies(res))
     return 0
+
+
+# ------------------------------------------------------------------ מצב סערה (3.2)
+
+def storm_weather(res):
+    """יש גשם עד 100 ק"מ, התראה, או מועמד למעקב"""
+    near = res["diag"].get("nearest_km")
+    return bool(alerts.qualifies(res) or res.get("watch") or (near is not None and near <= STORM_RADIUS_KM))
+
+
+def storm_active(state, now):
+    seen = storage.parse_ts(state.get("storm_seen"))
+    return bool(seen and now - seen <= timedelta(minutes=STORM_HOLD_MIN))
+
+
+def newest_frame_time(session):
+    """זמן הפריים האחרון באינדקס של RainViewer (בקשה קטנה), או None בתקלה"""
+    best = None
+    try:
+        _, frames = fetch_frames_index(session)
+        best = int(frames[-1]["time"])
+    except (RuntimeError, KeyError, ValueError, TypeError, IndexError, requests.RequestException):
+        pass
+    if IMS_RADAR_ENABLED:      # 3.2: המכ"ם הישראלי מתעדכן כל 5 דקות
+        try:
+            idx = ims_radar.http_get(session, ims_radar.IMS_RADAR_INDEX, tries=1, headers=ims_radar.HEADERS).json()
+            frames = ims_radar.parse_index(idx)
+            if frames:
+                best = max(best or 0, int(frames[-1]["time"]))
+        except (RuntimeError, KeyError, ValueError, TypeError, IndexError, requests.RequestException):
+            pass
+    return best
+
+
+def publish_status():
+    if not STATUS_PUBLISH:
+        return
+    try:
+        subprocess.run(["bash", os.path.join(os.path.dirname(__file__), "..", "scripts", "publish_status.sh")],
+                       timeout=60, check=False)
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"פרסום הדשבורד נכשל: {type(e).__name__}")
+
+
+def storm_loop(budget_min, run_once=None, clock=time.monotonic, sleep=time.sleep, newest=None, publish=None):
+    """ריצה רגילה, ואם יש מצב סערה: ממשיכים לחכות לפריימים חדשים עד budget_min דקות"""
+    run_once = run_once or (lambda: run())
+    publish = publish or publish_status
+    start = clock()
+    rc = run_once()
+    last_run = clock()
+    runs = 1
+    if storm_active(storage.load_state(), datetime.now(TZ)):
+        publish()          # בסערה הדשבורד מתעדכן אחרי כל פריים, לא רק בסוף הריצה
+    with requests.Session() as session:
+        newest = newest or (lambda: newest_frame_time(session))
+        while True:
+            state = storage.load_state()
+            if not storm_active(state, datetime.now(TZ)):
+                break
+            last = storage.parse_ts(state.get("last_radar"))
+            last_ts = last.timestamp() if last else 0
+            if (clock() - start) / 60.0 > budget_min - STORM_TAIL_MIN:
+                break
+            sleep(STORM_POLL_S)
+            t = newest()
+            if t is None or t <= last_ts or clock() - last_run < STORM_MIN_RUN_GAP_S:
+                continue
+            rc = run_once()
+            last_run = clock()
+            runs += 1
+            publish()
+    print(f"מצב סערה: {runs} ניתוחים בריצה הזו")
+    return rc
 
 
 def test_telegram():
@@ -199,7 +364,11 @@ def main(argv=None):
     ap.add_argument("--png", help="שמירת תמונת בקרה (למשל out.png)")
     ap.add_argument("--save-frames", help="שמירת נתוני המכ\"ם (npz) להרצה חוזרת")
     ap.add_argument("--test-telegram", action="store_true", help="שולח הודעת בדיקה ותמונת בדיקה וסיים")
+    ap.add_argument("--storm", type=float, default=0, metavar="MIN",
+                    help="מצב סערה: כשיש גשם בטווח, להמשיך לנתח כל פריים חדש עד MIN דקות")
     a = ap.parse_args(argv)
     if a.test_telegram:
         sys.exit(test_telegram())
+    if a.storm > 0 and not a.dry_run:
+        sys.exit(storm_loop(a.storm))
     sys.exit(run(a.dry_run, a.png, a.save_frames))

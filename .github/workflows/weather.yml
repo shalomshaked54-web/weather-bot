@@ -21,7 +21,8 @@ permissions:
 jobs:
   run-weather-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # 3.2: מצב סערה - כשיש גשם בטווח הריצה נשארת פתוחה עד 30 דקות ומנתחת כל פריים חדש מיד
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -39,25 +40,29 @@ jobs:
           key: rain-state-${{ github.run_id }}
           restore-keys: rain-state-
 
+      # 3.2: גיבוי הלמידה מה-status.json שפורסם (אם ה-cache נמחק, הבוט משחזר ממנו את מה שלמד)
+      - name: Restore learning backup
+        run: |
+          mkdir -p state
+          git fetch -q --depth=1 origin status && git show FETCH_HEAD:status.json > state/published_status.json || true
+
       - name: Run bot
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           IMS_TOKEN: ${{ secrets.IMS_TOKEN }}   # אופציונלי: מד הגשם בבית דגן. בלי הסוד הבוט עובד כרגיל
           STATE_DIR: state
-        run: python bot.py ${{ inputs.test_telegram && '--test-telegram' || '' }}
+          STATUS_PUBLISH: '1'   # במצב סערה: עדכון הדשבורד אחרי כל פריים
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python bot.py ${{ inputs.test_telegram && '--test-telegram' || '--storm 30' }}
 
       # פרסום המצב לדשבורד: ענף status עם commit יחיד שנדרס בכל ריצה (בלי היסטוריה מתנפחת)
       - name: Publish status
         if: ${{ always() && hashFiles('status/status.json') != '' }}
-        run: |
-          cd status
-          git init -q -b status
-          git config user.name "rain-bot"
-          git config user.email "rain-bot@users.noreply.github.com"
-          git add status.json
-          git commit -q -m "status"
-          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/publish_status.sh
 
       # תמונות ונתוני מכ"ם (npz, להרצה חוזרת) של התראות ושל חשד לפספוס. נשמרים 14 יום
       - name: Upload radar images

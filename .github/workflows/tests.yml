@@ -40,3 +40,18 @@ jobs:
             out.png
             out.npz
           retention-days: 7
+
+
+      # 3.2: בדיקה לאחור על אירועי הגשם של 7-8 בנובמבר מהארכיון של מכ"ם השירות המטאורולוגי.
+      # מידע בלבד (לא מכשיל את הבדיקות). הדוח נשמר כ-artifact
+      - name: Backtest on real events (IMS archive)
+        continue-on-error: true
+        run: python -m rainbot.backtest --start 2026-11-07T06:00 --end 2026-11-08T16:00 --out backtest/report.json --seed-state backtest/seed_state.json
+
+      - name: Upload backtest report
+        if: ${{ always() && hashFiles('backtest/*') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: backtest-${{ github.run_id }}
+          path: backtest/*
+          retention-days: 30

@@ -375,6 +375,12 @@ function render(s) {
       facts.push(['מגיע מכיוון', s.heading == null ? '-' : DIRS[Math.floor(((s.heading + 180) % 360 + 22.5) % 360 / 45)]],
                  ['מהירות', s.speed ? s.speed + ' קמ״ש' : '-'], ['מרחק', s.front_km == null ? '-' : Math.round(s.front_km) + ' ק״מ']);
     }
+    // 3.2: חיזוי לנקודה - הסיכוי שיירד ממש אצלך וכמה זמן
+    const nc = s.nowcast;
+    if (s.stage !== 'now' && nc && nc.p != null) {
+      facts.push(['סיכוי שיירד אצלך', Math.round(nc.p * 100) + '%']);
+      if (nc.dur) facts.push(['משך צפוי', nc.dur >= 60 ? 'יותר משעה' : 'כ-' + Math.max(5, Math.round(nc.dur / 5) * 5) + ' דק׳']);
+    }
     const TR = {up: 'מתחזק', down: 'נחלש', steady: 'יציב'};
     if (TR[s.intensity_trend]) facts.push(['מגמה', TR[s.intensity_trend]]);
     const fc = s.sources && s.sources.forecast;
@@ -388,6 +394,11 @@ function render(s) {
   const warn = s.radar_down_since && s.stage ? `המכ״ם לא זמין מאז ${hm(new Date(s.radar_down_since))}. הבוט ממשיך לפי מקורות אחרים ככל שאפשר.` : '';
   $('warn').textContent = warn; $('warn').hidden = !warn;
   renderSources(s.sources);
+  // 3.2: מה הבוט למד (אחרי אירוע אחד לפחות)
+  const ev = s.learning && Array.isArray(s.learning.events) ? s.learning.events[s.learning.events.length - 1] : null;
+  if (ev && ev.abs_err_med != null && !$('facts').hidden) {
+    $('facts').innerHTML += `<div><dt>דיוק באירוע האחרון</dt><dd>${esc('±' + Math.round(ev.abs_err_med) + ' דק׳')}</dd></div>`;
+  }
   $('foot').innerHTML = `עודכן ב-${bdi(hm(new Date(s.updated)))} ${s.radar ? ` · תמונת מכ״ם מ-${bdi(hm(new Date(s.radar)))}` : ''}`;
   $('ver').innerHTML = `בוט התראות גשם · גרסה ${bdi(s.version || '-')}`;
   renderAlerts((s.alerts || []).slice().reverse().slice(0, 10));

@@ -29,11 +29,11 @@ TX0, TX1 = int(PX.min() // TILE_SIZE), int(PX.max() // TILE_SIZE)
 TY0, TY1 = int(PY.min() // TILE_SIZE), int(PY.max() // TILE_SIZE)
 
 
-def http_get(session, url, tries=3, timeout=(5, 15)):
+def http_get(session, url, tries=3, timeout=(5, 15), headers=None):
     last = "unknown"
     for attempt in range(tries):
         try:
-            res = session.get(url, timeout=timeout)
+            res = session.get(url, timeout=timeout, headers=headers) if headers else session.get(url, timeout=timeout)
             if res.status_code == 200:
                 return res
             last = f"HTTP {res.status_code}"

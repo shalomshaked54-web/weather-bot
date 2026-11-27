@@ -12,7 +12,8 @@ from .config import (BASE_RADIUS_KM, CELL_DECAY_DBZ, CELL_DECAY_MAX_PEAK, CELL_H
                      MIN_SPEED_KMH, NOW_RADIUS_KM, PERSIST_MIN_CELLS, POPUP_CLEAR_DBZ, POPUP_EDGE_KM,
                      POPUP_MAX_SPEED_KMH, POPUP_PEAK_DBZ, SPEED_UNCERTAINTY, SPREAD_PER_KM, STAGE_RANK,
                      STEP_MIN, SUSPICIOUS_MIN_DBZ, SUSPICIOUS_RADIUS_KM, THRESH_DBZ, TREND_DBZ,
-                     WATCH_MAX_MIN)
+                     WATCH_MAX_MIN, NC_MIN_P)
+from .nowcast import point_nowcast
 from .radar import XX, YY
 
 
@@ -173,7 +174,7 @@ def system_peaks(fields, times, motion, tau0):
     return peaks
 
 
-def analyze_system(fields, times):
+def analyze_system(fields, times, spread=1.0):
     """מסלול המערכות: שדות dBZ גולמיים (ישן->חדש) וזמנים -> תוצאה מובנית"""
     cleaned, labels, sizes = [], None, None
     for f in fields:
@@ -207,7 +208,8 @@ def analyze_system(fields, times):
         res["front_km"] = 0.0
         res["cluster_km2"] = float(sizes[np.unique(labels[now_mask & (latest > 0)])].sum() * CELL_KM ** 2)
 
-    motion = estimate_motion([motion_weights(c) for c in cleaned], times)
+    weights = [motion_weights(c) for c in cleaned]
+    motion = estimate_motion(weights, times)
     res["motion"] = motion
 
     if res["stage"] is None and motion and motion["speed"] >= MIN_SPEED_KMH:
@@ -228,6 +230,18 @@ def analyze_system(fields, times):
             res["peak_dbz"] = max(peaks)
             res["cluster_km2"] = float(sum(sizes[l] for l in hit_labels if l) * CELL_KM ** 2)
             res["stage"] = "imminent" if mid[0] <= IMMINENT_MIN else ("early" if mid[0] <= EARLY_MIN else None)
+
+    # 3.2: חיזוי לנקודה עצמה (אנסמבל על שדה תנועה מקומי). כשהוא בטוח מספיק, הוא קובע את זמן ההגעה
+    # ואת השלב (מוקדמת / מיידית). הגשם ברדיוס 5 ק"מ (החישוב הקודם) עדיין קובע אם יש התראה בכלל
+    res["nowcast"] = None
+    if res["stage"] != "now" and res.get("eta_mid") is not None:
+        nc = point_nowcast(latest, weights, times, motion, spread=spread)
+        res["nowcast"] = nc
+        if nc and nc["p"] >= NC_MIN_P and nc["eta_mid"] is not None:
+            res["eta_disc"] = res["eta"]
+            res["eta"], res["eta_mid"] = nc["eta"], nc["eta_mid"]
+            if res["stage"]:
+                res["stage"] = "imminent" if nc["eta_mid"] <= IMMINENT_MIN else "early"
 
     # 3.1: מגמת עוצמה של הגשם הרלוונטי (מעל הגבעה, או זה שבדרך אליה)
     if res["stage"] == "now":
@@ -477,9 +491,9 @@ def analyze_cells(fields, times, gmotion=None):
     return out
 
 
-def analyze(fields, times):
-    """מאחד את שני המסלולים. התראה נשלחת אם qualifies(res)"""
-    res = analyze_system(fields, times)
+def analyze(fields, times, spread=1.0):
+    """מאחד את שני המסלולים. התראה נשלחת אם qualifies(res). spread: רוחב האנסמבל מהלמידה"""
+    res = analyze_system(fields, times, spread)
     res.setdefault("trend", None)
     res.update(src="system" if res["stage"] else None, min_score=MIN_SCORE_SYSTEM, boost=None,
                motion_used=res["motion"], cell=None)
