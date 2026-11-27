@@ -120,3 +120,26 @@ class LearnTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BacktestTests(unittest.TestCase):
+
+    def test_backtest_on_synthetic_frames(self):
+        from rainbot import backtest
+
+        start = datetime(2026, 12, 1, 12, 0, tzinfo=TZ)
+
+        class Fake:
+            def get(self, t):
+                k = (t - start).total_seconds() / 3600.0          # שעות מההתחלה
+                cx = -60 + 30 * k                                  # חזית שזזה מזרחה ב-30 קמ"ש
+                f = np.zeros(bot.XX.shape, np.float32)
+                f[(bot.XX > cx - 40) & (bot.XX < cx) & (np.abs(bot.YY) < 40)] = 35.0
+                return f
+        state, rows = backtest.run(start, start + timedelta(hours=3), frames=Fake(), log=lambda *_: None)
+        rep = backtest.report(state)
+        self.assertEqual(len(rep["events"]), 1)
+        ev = rep["events"][0]
+        self.assertIsNotNone(ev["alert_lead"])
+        self.assertGreaterEqual(ev["alert_lead"], 30)          # התראה לפחות חצי שעה מראש
+        self.assertLessEqual(abs(ev["err_med"]), 8)

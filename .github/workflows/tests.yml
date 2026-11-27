@@ -41,11 +41,17 @@ jobs:
             out.npz
           retention-days: 7
 
-      # זמני (3.2): בדיקה שהמכ"ם של השירות המטאורולוגי נגיש מ-GitHub Actions
-      - name: Probe IMS radar reachability
+
+      # 3.2: בדיקה לאחור על אירועי הגשם של 7-8 בנובמבר מהארכיון של מכ"ם השירות המטאורולוגי.
+      # מידע בלבד (לא מכשיל את הבדיקות). הדוח נשמר כ-artifact
+      - name: Backtest on real events (IMS archive)
         continue-on-error: true
-        run: |
-          curl -s -o idx.json -w "index: %{http_code} %{size_download}B %{time_total}s\n" --max-time 20 -A "Mozilla/5.0 (rain-alert-bot)" -H "Referer: https://ims.gov.il/he/RadarSatellite" https://ims.gov.il/he/radar_satellite || true
-          head -c 300 idx.json; echo
-          curl -s -o img.png -w "image: %{http_code} %{size_download}B\n" --max-time 20 -A "Mozilla/5.0 (rain-alert-bot)" https://ims.gov.il/sites/default/files/ims_data/map_images/IMSRadar4GIS/IMSRadar4GIS_202611071030_0.png || true
-          file img.png || true
+        run: python -m rainbot.backtest --start 2026-11-07T06:00 --end 2026-11-08T16:00 --out backtest/report.json --seed-state backtest/seed_state.json
+
+      - name: Upload backtest report
+        if: ${{ always() && hashFiles('backtest/*') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: backtest-${{ github.run_id }}
+          path: backtest/*
+          retention-days: 30

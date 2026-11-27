@@ -15,6 +15,14 @@ from .analysis import compass, dbz_to_mmh, intensity_label
 from .config import NC_MISS_P, THRESH_DBZ, VERSION
 
 FOOTER_LINK = "<a href=\"https://www.rainviewer.com\">Weather data by Rain Viewer</a>"
+FOOTERS = {"rainviewer": FOOTER_LINK,
+           "ims": "<a href=\"https://ims.gov.il/he/RadarSatellite\">מכ\"ם השירות המטאורולוגי</a>"}
+_SOURCE = {"name": "rainviewer"}
+
+
+def set_source(name):
+    """3.2: מקור המכ"ם של הריצה הנוכחית (לשורת המקור בהודעות)"""
+    _SOURCE["name"] = name if name in FOOTERS else "rainviewer"
 TREND_WORD = {"up": "ומתחזק 📈", "down": "ונחלש 📉", "steady": "ויציב"}
 CONF_WORD = {3: "ודאות גבוהה 🟢", 2: "ודאות בינונית 🟡"}
 BOOST_WORD = {"forecast": "אושר בתחזית", "ims": "אושר במד הגשם"}
@@ -46,7 +54,7 @@ def _hhmm(iso):
 
 
 def _footer(radar_time):
-    return f"<i>🛰️ מכ\"ם {radar_time.strftime('%H:%M')} · {FOOTER_LINK}</i>"
+    return f"<i>🛰️ מכ\"ם {radar_time.strftime('%H:%M')} · {FOOTERS[_SOURCE['name']]}</i>"
 
 
 def intensity_line(dbz, trend=None):

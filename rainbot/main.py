@@ -11,17 +11,63 @@ from datetime import datetime, timedelta
 import numpy as np
 import requests
 
-from . import alerts, forecast, ims, learn, live, messages, storage, telegram
+from . import alerts, forecast, ims, ims_radar, learn, live, messages, storage, telegram
 from .analysis import analyze
-from .config import (MAX_FRAME_AGE_MIN, OUT_DIR, STATE_DIR, STATUS_PUBLISH, STORM_HOLD_MIN, STORM_MIN_RUN_GAP_S,
+from .config import (IMS_RADAR_ENABLED, MAX_FRAME_AGE_MIN, OUT_DIR, RADAR_PRIMARY, RADAR_STALE_SWITCH_MIN, STATE_DIR, STATUS_PUBLISH, STORM_HOLD_MIN, STORM_MIN_RUN_GAP_S,
                      STORM_POLL_S, STORM_RADIUS_KM, STORM_TAIL_MIN, SUSPICIOUS_MIN_CELLS, TZ, VERSION)
-from .radar import XX, fetch_frames_index, load_fields
+from .radar import XX, YY, fetch_frames_index, load_fields
 from .render import render_png
 
 DELIVERED = ("ok", "maybe")
 
 
+# 3.2: איזה מכ"ם שימש בריצה האחרונה, והשוואה בין שני המקורות (נרשם בלוג כ-ims_cmp)
+RADAR_INFO = {}
+
+
+def _quick_diag(fields, frames, now):
+    raw = fields[-1]
+    dist = np.hypot(XX, YY)
+    m = raw >= 20.0
+    return {"age": round((now.timestamp() - frames[-1]["time"]) / 60.0, 1),
+            "near": round(float(dist[m].min()), 1) if m.any() else None,
+            "at": bool(learn.point_wet(raw))}
+
+
 def get_radar(session, now):
+    """מחזיר (שדות, פריימים, None) או (None, None, הודעת שגיאה).
+    3.2: שני מקורות. הראשי (RADAR_PRIMARY, ברירת מחדל RainViewer) משמש כל עוד הוא תקין ולא ישן
+    מהשני ביותר מ-RADAR_STALE_SWITCH_MIN דקות; אחרת המכ"ם השני"""
+    RADAR_INFO.clear()
+    got = {"rainviewer": get_rainviewer(session, now)}
+    if IMS_RADAR_ENABLED and isinstance(session, requests.Session):
+        got["ims"] = get_ims_radar(session, now)
+    cmp = {k: (_quick_diag(v[0], v[1], now) if v[2] is None else {"err": v[2][:60]}) for k, v in got.items()}
+    order = [RADAR_PRIMARY] + [k for k in ("rainviewer", "ims") if k != RADAR_PRIMARY]
+    ok = [k for k in order if k in got and got[k][2] is None]
+    use = None
+    if ok:
+        use = ok[0]
+        if len(ok) > 1 and cmp[ok[0]]["age"] - cmp[ok[1]]["age"] >= RADAR_STALE_SWITCH_MIN:
+            use = ok[1]
+    RADAR_INFO.update(src=use, cmp=cmp if len(got) > 1 else None)
+    if use is None:
+        return got["rainviewer"] if RADAR_PRIMARY not in got else got[RADAR_PRIMARY]
+    return got[use]
+
+
+def get_ims_radar(session, now):
+    try:
+        fields, frames = ims_radar.get_fields(session)
+        age = (now.timestamp() - frames[-1]["time"]) / 60.0
+        if age > MAX_FRAME_AGE_MIN:
+            raise RuntimeError(f"הפריים האחרון ישן ({age:.0f} דקות)")
+        return fields, frames, None
+    except (RuntimeError, KeyError, ValueError, TypeError, IndexError, OSError, requests.RequestException) as e:
+        return None, None, str(e) or type(e).__name__
+
+
+def get_rainviewer(session, now):
     """מחזיר (שדות, פריימים, None) או (None, None, הודעת שגיאה)"""
     try:
         host, frames = fetch_frames_index(session)
@@ -99,6 +145,7 @@ def run(dry_run=False, png=None, save_frames=None):
         return 0
 
     # ---------------------------------------------------------- ניתוח
+    messages.set_source(RADAR_INFO.get("src") or "rainviewer")
     times = [f["time"] for f in frames]
     radar_time = datetime.fromtimestamp(times[-1], TZ)
     radar_iso = radar_time.isoformat(timespec="seconds")
@@ -198,6 +245,10 @@ def run(dry_run=False, png=None, save_frames=None):
                "watch": ({"eta": res["watch"]["eta"], "score": res["watch"]["score"],
                           "fc": res["watch"].get("forecast_agree"), "ok": alerts.watch_ok(res)}
                          if res.get("watch") else None)}
+    if RADAR_INFO.get("src") and RADAR_INFO["src"] != "rainviewer":
+        summary["radar_src"] = RADAR_INFO["src"]
+    if RADAR_INFO.get("cmp"):
+        summary["ims_cmp"] = RADAR_INFO["cmp"]
     if live_act:
         summary["live"] = live_act
     if learn_ev:
@@ -237,11 +288,21 @@ def storm_active(state, now):
 
 def newest_frame_time(session):
     """זמן הפריים האחרון באינדקס של RainViewer (בקשה קטנה), או None בתקלה"""
+    best = None
     try:
         _, frames = fetch_frames_index(session)
-        return int(frames[-1]["time"])
+        best = int(frames[-1]["time"])
     except (RuntimeError, KeyError, ValueError, TypeError, IndexError, requests.RequestException):
-        return None
+        pass
+    if IMS_RADAR_ENABLED:      # 3.2: המכ"ם הישראלי מתעדכן כל 5 דקות
+        try:
+            idx = ims_radar.http_get(session, ims_radar.IMS_RADAR_INDEX, tries=1, headers=ims_radar.HEADERS).json()
+            frames = ims_radar.parse_index(idx)
+            if frames:
+                best = max(best or 0, int(frames[-1]["time"]))
+        except (RuntimeError, KeyError, ValueError, TypeError, IndexError, requests.RequestException):
+            pass
+    return best
 
 
 def publish_status():
