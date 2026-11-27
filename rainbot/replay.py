@@ -25,7 +25,8 @@ def replay_file(path):
     out = {"file": os.path.basename(path), "radar": radar_time.isoformat(timespec="minutes"),
            "then": {k: meta.get(k) for k in ("stage", "src", "sent", "v")},
            "now": {"stage": res["stage"], "src": res["src"], "score": res["score"], "min_score": res["min_score"],
-                   "eta": res["eta"], "trend": res.get("trend"), "alert": qualifies(res), "cell": res["cell_dbg"]}}
+                   "eta": res["eta"], "trend": res.get("trend"), "alert": qualifies(res), "cell": res["cell_dbg"],
+                   "nowcast": res.get("nowcast")}}
     msg = build_message(res, radar_time, radar_time) if qualifies(res) else None
     return out, msg, res, fields[-1], radar_time
 

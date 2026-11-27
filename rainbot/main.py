@@ -163,6 +163,9 @@ def run(dry_run=False, png=None, save_frames=None):
                "trend": res.get("trend"), "boost": res.get("boost"), "fc_agree": res.get("forecast_agree"),
                "fc_prob": (fsum or {}).get("prob"), "ims_mm": (gauge or {}).get("mm"),
                "frames": len(frames),
+               # 3.2: חיזוי לנקודה - סיכוי, טווח זמן ההתחלה, ומספר האזורים עם תנועה מקומית
+               "nc": ({k: res["nowcast"][k] for k in ("p", "eta", "eta_mid", "dur", "blocks")}
+                      if res.get("nowcast") else None),
                "watch": ({"eta": res["watch"]["eta"], "score": res["watch"]["score"],
                           "fc": res["watch"].get("forecast_agree"), "ok": alerts.watch_ok(res)}
                          if res.get("watch") else None)}

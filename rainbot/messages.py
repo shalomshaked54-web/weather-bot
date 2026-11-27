@@ -12,7 +12,7 @@ import math
 from datetime import datetime, timedelta
 
 from .analysis import compass, dbz_to_mmh, intensity_label
-from .config import THRESH_DBZ, VERSION
+from .config import NC_MISS_P, THRESH_DBZ, VERSION
 
 FOOTER_LINK = "<a href=\"https://www.rainviewer.com\">Weather data by Rain Viewer</a>"
 TREND_WORD = {"up": "ומתחזק 📈", "down": "ונחלש 📉", "steady": "ויציב"}
@@ -80,6 +80,21 @@ def gauge_line(gauge):
     return None
 
 
+def nowcast_line(nc):
+    """3.2: שורת החיזוי לנקודה: הסיכוי שיירד גשם אצלך, וכמה זמן הוא צפוי להימשך"""
+    if not nc:
+        return None
+    p = int(round(nc["p"] * 100))
+    if nc["p"] < NC_MISS_P:
+        return f"📍 ייתכן שהגשם יחלוף לידך (סיכוי {p}% שיגיע ממש אלייך)"
+    line = f"📍 סיכוי {p}% שיירד ממש אצלך"
+    if nc.get("dur") and nc["dur"] >= 5:
+        dur = nc["dur"]
+        how_long = "יותר משעה" if dur >= 60 else f"כ-{max(5, int(round(dur / 5) * 5))} דק'"
+        line += f" · צפוי להימשך {how_long}"
+    return line
+
+
 def build_message(res, radar_time, now, gauge=None, why=None):
     """התראת גשם (מוקדמת / מיידית / כעת, ממערכת או מתא). why="intensify" = הגשם הפך לחזק"""
     src = res.get("src") or "system"
@@ -112,6 +127,10 @@ def build_message(res, radar_time, now, gauge=None, why=None):
     lines.append(intensity_line(dbz, res.get("trend")))
     if stage != "now" and not popup and m:
         lines.append(direction_line(m, res["front_km"], is_cell))
+    if stage != "now" and not is_cell:
+        ncl = nowcast_line(res.get("nowcast"))
+        if ncl:
+            lines.append(ncl)
     g = gauge_line(gauge)
     if g:
         lines.append(g)
@@ -141,6 +160,9 @@ def watch_message(res, radar_time, now):
              intensity_line(w["peak_dbz"], w.get("trend"))]
     if res.get("motion"):
         lines.append(direction_line(res["motion"], w["front_km"]))
+    ncl = nowcast_line(res.get("nowcast"))
+    if ncl:
+        lines.append(ncl)
     lines += ["📡 תחזית המודלים מסכימה שיירד גשם באותו זמן",
               "ℹ️ זו התראה מוקדמת. כשהגשם יתקרב תגיע התראה עם זמן מדויק.", "", _footer(radar_time)]
     return "\n".join(lines)
