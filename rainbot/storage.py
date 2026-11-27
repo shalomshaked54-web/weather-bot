@@ -97,6 +97,10 @@ def write_status(res, summary, state, radar_time, now, sources=None, active=Fals
     if res and not on and res.get("watch") and watch_ok(res):
         w = res["watch"]
         status["watch"] = {"eta": w["eta"], "peak_dbz": w["peak_dbz"], "front_km": round(w["front_km"], 1)}
+    # 3.2: הלמידה (גם גיבוי: אם ה-cache נמחק, היא משוחזרת מכאן)
+    lr = state.get("learn")
+    status["learning"] = ({k: lr.get(k) for k in ("params", "samples", "events", "false_alarms", "misses")}
+                          if lr else None)
     ended, last = parse_ts(state.get("rain_ended_at")), parse_ts(state.get("last_alert"))
     if ended and (last is None or ended > last):
         status["rain_ended_at"] = state["rain_ended_at"]

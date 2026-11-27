@@ -153,6 +153,17 @@ STATUS_PUBLISH = os.environ.get("STATUS_PUBLISH") == "1"   # פרסום הדשב
 LIVE_MAX_MIN = 90
 LIVE_CANCEL_FRAMES = 2
 
+# 3.2: מערכת הלמידה (learn.py)
+LEARN_DRY_MIN = 30           # התחלת גשם = פריים רטוב אחרי 30+ דקות יבשות בנקודה
+LEARN_WINDOW_MIN = 150       # בודקים חיזויים מ-2.5 השעות שלפני ההתחלה
+LEARN_MATCH_MIN = 60         # חיזוי שטעה ביותר משעה כנראה היה על מערכת אחרת: לא נספר
+LEARN_FALSE_AFTER_MIN = 30   # התראה שעברו 30 דקות מסוף הטווח שלה בלי גשם = התראת שווא
+LEARN_MAX_SAMPLES = 300
+LEARN_MIN_SAMPLES = 6        # מתחת לזה לא משנים פרמטרים
+LEARN_PRIOR_N = 8            # "כיווץ": עם 8 דגימות התיקון הוא חצי ממה שהנתונים מראים
+LEARN_SCALE_RANGE = (0.7, 1.4)
+LEARN_SPREAD_RANGE = (0.7, 2.0)
+
 # ------------------------------------------------------------------ Open-Meteo (תחזית)
 
 FORECAST_ENABLED = os.environ.get("FORECAST", "1") != "0"

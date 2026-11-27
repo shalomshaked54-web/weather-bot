@@ -40,6 +40,12 @@ jobs:
           key: rain-state-${{ github.run_id }}
           restore-keys: rain-state-
 
+      # 3.2: גיבוי הלמידה מה-status.json שפורסם (אם ה-cache נמחק, הבוט משחזר ממנו את מה שלמד)
+      - name: Restore learning backup
+        run: |
+          mkdir -p state
+          git fetch -q --depth=1 origin status && git show FETCH_HEAD:status.json > state/published_status.json || true
+
       - name: Run bot
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

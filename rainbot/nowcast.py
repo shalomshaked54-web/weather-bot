@@ -162,7 +162,7 @@ def _trace(wet, dbz, vxf, vyf, factor, rot, lead_min):
     return out
 
 
-def point_nowcast(cleaned, weights, times, gmotion, lead_min=MAX_LEAD_MIN, members=NC_MEMBERS, seed=7):
+def point_nowcast(cleaned, weights, times, gmotion, lead_min=MAX_LEAD_MIN, members=NC_MEMBERS, seed=7, spread=1.0):
     """חיזוי לגבעה עצמה. cleaned: השדה הנקי של הפריים האחרון. מחזיר None אם אין תנועה אמינה, אחרת:
     {"p": סיכוי לגשם בתוך lead_min דקות, "eta": (p10, p90), "eta_mid": חציון, "dur": משך חציוני בדקות,
      "peak_dbz": עוצמה חציונית בחצי השעה הראשונה, "n": תרחישים, "blocks": אזורים עם תנועה מקומית}"""
@@ -175,8 +175,8 @@ def point_nowcast(cleaned, weights, times, gmotion, lead_min=MAX_LEAD_MIN, membe
     q = float(gmotion.get("quality", 0.5))
     if not gmotion.get("consistent"):
         q *= 0.5
-    sp_sig = NC_SPEED_SIGMA + 0.25 * (1 - q)
-    an_sig = math.radians(NC_ANGLE_SIGMA_DEG + 12.0 * (1 - q))
+    sp_sig = (NC_SPEED_SIGMA + 0.25 * (1 - q)) * spread         # spread: כיול מהלמידה (learn.py)
+    an_sig = math.radians(NC_ANGLE_SIGMA_DEG + 12.0 * (1 - q)) * spread
     rng = np.random.default_rng(seed)
     onsets, durs, peaks = [], [], []
     for k in range(members):

@@ -174,7 +174,7 @@ def system_peaks(fields, times, motion, tau0):
     return peaks
 
 
-def analyze_system(fields, times):
+def analyze_system(fields, times, spread=1.0):
     """מסלול המערכות: שדות dBZ גולמיים (ישן->חדש) וזמנים -> תוצאה מובנית"""
     cleaned, labels, sizes = [], None, None
     for f in fields:
@@ -235,7 +235,7 @@ def analyze_system(fields, times):
     # ואת השלב (מוקדמת / מיידית). הגשם ברדיוס 5 ק"מ (החישוב הקודם) עדיין קובע אם יש התראה בכלל
     res["nowcast"] = None
     if res["stage"] != "now" and res.get("eta_mid") is not None:
-        nc = point_nowcast(latest, weights, times, motion)
+        nc = point_nowcast(latest, weights, times, motion, spread=spread)
         res["nowcast"] = nc
         if nc and nc["p"] >= NC_MIN_P and nc["eta_mid"] is not None:
             res["eta_disc"] = res["eta"]
@@ -491,9 +491,9 @@ def analyze_cells(fields, times, gmotion=None):
     return out
 
 
-def analyze(fields, times):
-    """מאחד את שני המסלולים. התראה נשלחת אם qualifies(res)"""
-    res = analyze_system(fields, times)
+def analyze(fields, times, spread=1.0):
+    """מאחד את שני המסלולים. התראה נשלחת אם qualifies(res). spread: רוחב האנסמבל מהלמידה"""
+    res = analyze_system(fields, times, spread)
     res.setdefault("trend", None)
     res.update(src="system" if res["stage"] else None, min_score=MIN_SCORE_SYSTEM, boost=None,
                motion_used=res["motion"], cell=None)
