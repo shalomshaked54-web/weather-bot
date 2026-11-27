@@ -10,6 +10,17 @@ from . import config
 
 MAX_RETRY_AFTER_S = 15
 
+# 3.2: ההודעה האחרונה שנשלחה בהצלחה {"id", "kind": "photo" / "text"}, כדי לעדכן אותה אחר כך (הודעה חיה)
+LAST = {}
+
+
+def _remember(method, res):
+    try:
+        LAST.clear()
+        LAST.update(id=int(res.json()["result"]["message_id"]), kind="photo" if method == "sendPhoto" else "text")
+    except (ValueError, KeyError, TypeError, AttributeError):
+        pass
+
 
 def _post_telegram(method, label, **kw):
     """מחזיר ok / maybe / fail, או bad_html כשטלגרם לא הצליח לפענח את התגיות (3.2).
@@ -25,8 +36,12 @@ def _post_telegram(method, label, **kw):
             print(f"שגיאה ב{label}: {type(e).__name__}")   # ההודעה המלאה כוללת את הטוקן
             return "fail"
         if res.status_code == 200:
+            if method in ("sendMessage", "sendPhoto"):
+                _remember(method, res)
             return "ok"
         text = getattr(res, "text", "") or ""
+        if res.status_code == 400 and "message is not modified" in text:
+            return "ok"      # עריכה בלי שינוי: לא תקלה
         print(f"שגיאה ב{label}: {res.status_code} {text[:200]}")
         if res.status_code == 429 and attempt == 0:
             wait = _retry_after(res)
@@ -76,6 +91,20 @@ def send_telegram_photo(png_bytes, caption=""):
 
 def deliver(png_bytes, msg):
     """תמונה עם כיתוב, ואם נכשלה בוודאות - טקסט. מחזיר ok / maybe / fail"""
+    LAST.clear()     # "maybe" לא מחזיר מזהה: לא לעדכן בטעות הודעה ישנה
     r = send_telegram_photo(png_bytes, msg)
     return r if r != "fail" else send_telegram(msg)
 
+
+
+def edit_message(message_id, kind, message):
+    """3.2: עריכת הודעה קיימת (בלי צלצול). kind="photo" עורך את הכיתוב. מחזיר ok / maybe / fail"""
+    base = {"chat_id": config.TELEGRAM_CHAT_ID, "message_id": message_id, "parse_mode": "HTML"}
+    if kind == "photo":
+        if len(message) > 1000:
+            return "fail"
+        r = _post_telegram("editMessageCaption", "עדכון הודעה", json={**base, "caption": message}, timeout=(5, 20))
+    else:
+        r = _post_telegram("editMessageText", "עדכון הודעה",
+                           json={**base, "text": message, "disable_web_page_preview": True}, timeout=(5, 20))
+    return "fail" if r == "bad_html" else r

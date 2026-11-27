@@ -150,6 +150,13 @@ def build_message(res, radar_time, now, gauge=None, why=None):
     return "\n".join(lines)
 
 
+def live_cancel_message(radar_time, now):
+    """3.2: ההודעה החיה כשהגשם כבר לא בדרך (שינה כיוון או התפוגג)"""
+    return ("🌤️ <b>עדכון: הגשם כבר לא צפוי להגיע לגבעת שמואל</b>\n\n"
+            "המערכת שינתה כיוון או התפוגגה. אם היא תחזור, תגיע התראה חדשה.\n"
+            f"\n🔄 <i>עודכן {now.strftime('%H:%M')} (מכ\"ם {radar_time.strftime('%H:%M')})</i>")
+
+
 def watch_message(res, radar_time, now):
     """3.2: "מעקב" - מערכת גשם בים, כשעה לפני שהיא אמורה להגיע"""
     w = res["watch"]

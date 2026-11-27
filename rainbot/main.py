@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import requests
 
-from . import alerts, forecast, ims, messages, storage, telegram
+from . import alerts, forecast, ims, live, messages, storage, telegram
 from .analysis import analyze
 from .config import (MAX_FRAME_AGE_MIN, OUT_DIR, STATUS_PUBLISH, STORM_HOLD_MIN, STORM_MIN_RUN_GAP_S,
                      STORM_POLL_S, STORM_RADIUS_KM, STORM_TAIL_MIN, SUSPICIOUS_MIN_CELLS, TZ, VERSION)
@@ -118,6 +118,8 @@ def run(dry_run=False, png=None, save_frames=None):
         hold = "low_score"
     else:
         go, why = alerts.send_decision(state, stage, now, radar_iso, res.get("peak_dbz"))
+        if not go and live.resume(state, now, why):
+            go, why = True, "resumed"     # 3.2: הגשם חזר אחרי "כבר לא צפוי"
         msg = messages.build_message(res, radar_time, now, gauge, why)
         if dry_run:
             print(msg)
@@ -130,6 +132,14 @@ def run(dry_run=False, png=None, save_frames=None):
             delivery = telegram.deliver(png_bytes, msg)
             sent = delivery != "fail"
             sent_why, hold = (why, None) if sent else (None, "send_failed")
+
+    # ---------------------------------------------------------- הודעה חיה (3.2)
+    live_act = None
+    if not dry_run:
+        if sent:
+            live.remember(state, res, now, radar_iso, True)
+        else:
+            live_act = live.update(state, res, radar_time, now, radar_iso, gauge)
 
     # ---------------------------------------------------------- הודעות נוספות (3.1)
     if not sent and alerts.rain_end_decision(state, res, now):
@@ -172,6 +182,8 @@ def run(dry_run=False, png=None, save_frames=None):
                "watch": ({"eta": res["watch"]["eta"], "score": res["watch"]["score"],
                           "fc": res["watch"].get("forecast_agree"), "ok": alerts.watch_ok(res)}
                          if res.get("watch") else None)}
+    if live_act:
+        summary["live"] = live_act
     if out.sent:
         summary["extra"] = out.sent
     if delivery and delivery != "ok":
