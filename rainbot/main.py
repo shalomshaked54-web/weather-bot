@@ -3,15 +3,18 @@ import argparse
 import json
 import math
 import os
+import subprocess
 import sys
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 
 import numpy as np
 import requests
 
 from . import alerts, forecast, ims, messages, storage, telegram
 from .analysis import analyze
-from .config import MAX_FRAME_AGE_MIN, OUT_DIR, SUSPICIOUS_MIN_CELLS, TZ, VERSION
+from .config import (MAX_FRAME_AGE_MIN, OUT_DIR, STATUS_PUBLISH, STORM_HOLD_MIN, STORM_MIN_RUN_GAP_S,
+                     STORM_POLL_S, STORM_RADIUS_KM, STORM_TAIL_MIN, SUSPICIOUS_MIN_CELLS, TZ, VERSION)
 from .radar import XX, fetch_frames_index, load_fields
 from .render import render_png
 
@@ -177,12 +180,78 @@ def run(dry_run=False, png=None, save_frames=None):
 
     if not dry_run:
         alerts.update_state(state, res, now, radar_time, sent, delivery)
+        if storm_weather(res):
+            state["storm_seen"] = now.isoformat(timespec="seconds")
         state["last_radar"] = radar_iso
         storage.save_state(state)
         storage.append_history(summary)
         storage.write_status(res, summary, state, radar_time, now,
                              sources_status(True, age_min, fsum, gauge), alerts.qualifies(res))
     return 0
+
+
+# ------------------------------------------------------------------ מצב סערה (3.2)
+
+def storm_weather(res):
+    """יש גשם עד 100 ק"מ, התראה, או מועמד למעקב"""
+    near = res["diag"].get("nearest_km")
+    return bool(alerts.qualifies(res) or res.get("watch") or (near is not None and near <= STORM_RADIUS_KM))
+
+
+def storm_active(state, now):
+    seen = storage.parse_ts(state.get("storm_seen"))
+    return bool(seen and now - seen <= timedelta(minutes=STORM_HOLD_MIN))
+
+
+def newest_frame_time(session):
+    """זמן הפריים האחרון באינדקס של RainViewer (בקשה קטנה), או None בתקלה"""
+    try:
+        _, frames = fetch_frames_index(session)
+        return int(frames[-1]["time"])
+    except (RuntimeError, KeyError, ValueError, TypeError, IndexError, requests.RequestException):
+        return None
+
+
+def publish_status():
+    if not STATUS_PUBLISH:
+        return
+    try:
+        subprocess.run(["bash", os.path.join(os.path.dirname(__file__), "..", "scripts", "publish_status.sh")],
+                       timeout=60, check=False)
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"פרסום הדשבורד נכשל: {type(e).__name__}")
+
+
+def storm_loop(budget_min, run_once=None, clock=time.monotonic, sleep=time.sleep, newest=None, publish=None):
+    """ריצה רגילה, ואם יש מצב סערה: ממשיכים לחכות לפריימים חדשים עד budget_min דקות"""
+    run_once = run_once or (lambda: run())
+    publish = publish or publish_status
+    start = clock()
+    rc = run_once()
+    last_run = clock()
+    runs = 1
+    if storm_active(storage.load_state(), datetime.now(TZ)):
+        publish()          # בסערה הדשבורד מתעדכן אחרי כל פריים, לא רק בסוף הריצה
+    with requests.Session() as session:
+        newest = newest or (lambda: newest_frame_time(session))
+        while True:
+            state = storage.load_state()
+            if not storm_active(state, datetime.now(TZ)):
+                break
+            last = storage.parse_ts(state.get("last_radar"))
+            last_ts = last.timestamp() if last else 0
+            if (clock() - start) / 60.0 > budget_min - STORM_TAIL_MIN:
+                break
+            sleep(STORM_POLL_S)
+            t = newest()
+            if t is None or t <= last_ts or clock() - last_run < STORM_MIN_RUN_GAP_S:
+                continue
+            rc = run_once()
+            last_run = clock()
+            runs += 1
+            publish()
+    print(f"מצב סערה: {runs} ניתוחים בריצה הזו")
+    return rc
 
 
 def test_telegram():
@@ -202,7 +271,11 @@ def main(argv=None):
     ap.add_argument("--png", help="שמירת תמונת בקרה (למשל out.png)")
     ap.add_argument("--save-frames", help="שמירת נתוני המכ\"ם (npz) להרצה חוזרת")
     ap.add_argument("--test-telegram", action="store_true", help="שולח הודעת בדיקה ותמונת בדיקה וסיים")
+    ap.add_argument("--storm", type=float, default=0, metavar="MIN",
+                    help="מצב סערה: כשיש גשם בטווח, להמשיך לנתח כל פריים חדש עד MIN דקות")
     a = ap.parse_args(argv)
     if a.test_telegram:
         sys.exit(test_telegram())
+    if a.storm > 0 and not a.dry_run:
+        sys.exit(storm_loop(a.storm))
     sys.exit(run(a.dry_run, a.png, a.save_frames))
