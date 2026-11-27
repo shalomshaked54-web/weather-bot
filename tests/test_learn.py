@@ -62,6 +62,9 @@ class LearnTests(unittest.TestCase):
         self.assertLessEqual(p["eta_scale"], 1.4)
         self.assertEqual(learn.params(st)["cell"]["eta_scale"], 1.0)
 
+    def test_starts_from_backtest_seed(self):
+        self.assertEqual(learn.params({})["system"]["eta_scale"], learn.LEARN_SEED["system"]["eta_scale"])
+
     def test_scale_unchanged_when_accurate(self):
         st = {}
         for d in range(6):
@@ -71,7 +74,8 @@ class LearnTests(unittest.TestCase):
     def test_one_odd_event_does_not_change_much(self):
         st = {}
         run_event(st, T, 30, 110)
-        self.assertEqual(learn.params(st)["system"]["eta_scale"], 1.0)   # מעט דגימות: לא משנים
+        # מעט דגימות: נשארים בנקודת ההתחלה
+        self.assertEqual(learn.params(st)["system"]["eta_scale"], learn.LEARN_SEED["system"]["eta_scale"])
 
     def test_false_alarm_counted(self):
         st = {}

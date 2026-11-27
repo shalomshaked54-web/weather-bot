@@ -22,7 +22,7 @@ from datetime import timedelta
 
 import numpy as np
 
-from .config import (IMMINENT_MIN, LEARN_DRY_MIN, LEARN_FALSE_AFTER_MIN, LEARN_MATCH_MIN, LEARN_MAX_SAMPLES, LEARN_MIN_SAMPLES,
+from .config import (IMMINENT_MIN, LEARN_DRY_MIN, LEARN_SEED, LEARN_FALSE_AFTER_MIN, LEARN_MATCH_MIN, LEARN_MAX_SAMPLES, LEARN_MIN_SAMPLES,
                      LEARN_PRIOR_N, LEARN_SCALE_RANGE, LEARN_SPREAD_RANGE, LEARN_WINDOW_MIN, NC_HIT_KM, NC_MIN_P,
                      THRESH_DBZ)
 from .radar import XX, YY
@@ -37,8 +37,9 @@ def params(state):
     out = {}
     for src in ("system", "cell"):
         p = lp.get(src) or {}
-        out[src] = {"eta_scale": float(p.get("eta_scale", 1.0)), "spread": float(p.get("spread", 1.0)),
-                    "n": int(p.get("n", 0))}
+        seed = LEARN_SEED.get(src, {})
+        out[src] = {"eta_scale": float(p.get("eta_scale", seed.get("eta_scale", 1.0))),
+                    "spread": float(p.get("spread", seed.get("spread", 1.0))), "n": int(p.get("n", 0))}
     return out
 
 
@@ -190,13 +191,15 @@ def _refit(lr):
     """מחשב מחדש את הפרמטרים מהדגימות (חציון, כיווץ לכיוון 1, גבולות)"""
     for src in ("system", "cell"):
         ss = [s for s in lr["samples"] if s["src"] == src and s["raw"] and s["raw"] >= 10][-60:]
+        seed = LEARN_SEED.get(src, {})
+        prior = float(seed.get("eta_scale", 1.0))
         cur = (lr["params"].get(src) or {})
-        spread = float(cur.get("spread", 1.0))
-        scale = float(cur.get("eta_scale", 1.0))
+        spread = float(cur.get("spread", seed.get("spread", 1.0)))
+        scale = float(cur.get("eta_scale", prior))
         if len(ss) >= LEARN_MIN_SAMPLES:
             ratio = statistics.median(s["obs"] / s["raw"] for s in ss)
             w = len(ss) / (len(ss) + LEARN_PRIOR_N)
-            scale = float(np.clip(1.0 + (ratio - 1.0) * w, *LEARN_SCALE_RANGE))
+            scale = float(np.clip(prior + (ratio - prior) * w, *LEARN_SCALE_RANGE))
             cov = float(np.mean([s["inside"] for s in ss[-40:]]))
             if cov < 0.7:
                 spread *= 1.15

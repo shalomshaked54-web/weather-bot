@@ -12,7 +12,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import bot  # noqa: E402
-from rainbot import alerts, config, main, messages, radar, storage, telegram  # noqa: E402
+from rainbot import alerts, config, learn, main, messages, radar, storage, telegram  # noqa: E402
 
 TZ = bot.TZ
 T0 = 1_760_000_000
@@ -357,7 +357,10 @@ class RunWatchTests(unittest.TestCase):
         with open(os.path.join(config.STATUS_DIR, "status.json")) as f:
             status = json.load(f)
         self.assertIsNone(status["stage"])
-        self.assertEqual(status["watch"]["eta"], list(bot.analyze(far_system(), TIMES)["watch"]["eta"]))
+        # 3.2: זמני ההגעה עוברים כיול לפי הלמידה (learn.apply), גם במעקב
+        expected = bot.analyze(far_system(), TIMES, spread=learn.params({})["system"]["spread"])
+        learn.apply(expected, {})
+        self.assertEqual(status["watch"]["eta"], list(expected["watch"]["eta"]))
         with open(config.HISTORY_FILE) as f:
             last = json.loads(f.read().splitlines()[0])
         self.assertEqual(last["extra"], ["watch"])
