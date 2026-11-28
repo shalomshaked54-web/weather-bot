@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import requests
 
-from . import alerts, forecast, ims, ims_radar, learn, live, messages, storage, telegram
+from . import alerts, feedback, forecast, ims, ims_radar, learn, live, messages, storage, telegram
 from .analysis import analyze
 from .config import (IMS_RADAR_ENABLED, MAX_FRAME_AGE_MIN, OUT_DIR, RADAR_PRIMARY, RADAR_STALE_SWITCH_MIN, STATE_DIR, STATUS_PUBLISH, STORM_HOLD_MIN, STORM_MIN_RUN_GAP_S,
                      STORM_POLL_S, STORM_RADIUS_KM, STORM_TAIL_MIN, SUSPICIOUS_MIN_CELLS, TZ, VERSION)
@@ -116,6 +116,11 @@ def run(dry_run=False, png=None, save_frames=None):
     state = storage.load_state()
     if learn.restore_from_status(state, os.path.join(STATE_DIR, "published_status.json")):
         print("הלמידה שוחזרה מ-status.json")
+    fb = None
+    if not dry_run:     # 3.2: הדיווחים שלך מטלגרם ("גשם" / "יבש")
+        fb = feedback.poll(state, now, [storage.parse_ts(a.get("t")) for a in state.get("alerts", [])])
+        if fb:
+            print(f"דיווחים מטלגרם: {fb}")
     with requests.Session() as session:
         fields, frames, radar_err = get_radar(session, now)
         fc = forecast.get_forecast(session, state, now)
@@ -150,7 +155,8 @@ def run(dry_run=False, png=None, save_frames=None):
     radar_time = datetime.fromtimestamp(times[-1], TZ)
     radar_iso = radar_time.isoformat(timespec="seconds")
     age_min = (now - radar_time).total_seconds() / 60.0
-    res = analyze(fields, times, spread=learn.params(state)["system"]["spread"])
+    lp = learn.params(state)["system"]
+    res = analyze(fields, times, spread=lp["spread"], rot=lp.get("rot", 0.0))
     learn.apply(res, state)          # 3.2: תיקון זמני ההגעה לפי מה שנלמד מאירועים קודמים
     alerts.apply_sources(res, fc, gauge, radar_time)
     raw = fields[-1]
@@ -192,13 +198,15 @@ def run(dry_run=False, png=None, save_frames=None):
             live_act = live.update(state, res, radar_time, now, radar_iso, gauge)
 
     # ---------------------------------------------------------- למידה (3.2)
-    learn_ev = None
+    learn_ev, verify_s = None, None
     if not dry_run:
         alert_times = [storage.parse_ts(a.get("t")) for a in state.get("alerts", [])]
         if sent:
             alert_times.append(now)
         learn_ev = learn.observe(state, raw, radar_time, alert_times)
         learn.record(state, res, radar_time, sent)
+        # 3.2: למידה מכל פריים - גם מגשם חלש ורחוק (בודק את התנועה של לפני 30 דקות מול עכשיו)
+        verify_s = learn.verify_step(state, raw, radar_time, res.get("motion"))
 
     # ---------------------------------------------------------- הודעות נוספות (3.1)
     if not sent and alerts.rain_end_decision(state, res, now):
@@ -253,6 +261,10 @@ def run(dry_run=False, png=None, save_frames=None):
         summary["live"] = live_act
     if learn_ev:
         summary["learn"] = learn_ev
+    if verify_s:
+        summary["verify"] = verify_s
+    if fb:
+        summary["user"] = fb
     if res.get("learn_scale") not in (None, 1.0):
         summary["scale"] = res["learn_scale"]
     if out.sent:

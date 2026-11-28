@@ -178,6 +178,19 @@ LEARN_SPREAD_RANGE = (0.7, 2.0)
 # הלמידה החיה "מכווצת" לכיוון הערכים האלה (ולא לכיוון 1) עד שיש לה מספיק דגימות משלה
 LEARN_SEED = {"system": {"eta_scale": 0.90, "spread": 1.3}, "cell": {"eta_scale": 1.0, "spread": 1.0}}
 
+# 3.2: למידה מכל פריים (verify.py) - אימות התנועה של לפני 30 דקות מול המכ"ם עכשיו, גם בגשם חלש
+VERIFY_LEAD_MIN = 30
+VERIFY_MIN_DBZ = 15.0        # גם טפטוף נספר
+VERIFY_MIN_CELLS = 40        # לפחות 160 קמ"ר של גשם בשני הפריימים
+VERIFY_MIN_Q = 0.35          # התאמה מינימלית כדי שהדגימה תיחשב
+VERIFY_FACTORS = tuple(round(0.6 + 0.05 * k, 2) for k in range(19))   # 0.60 .. 1.50
+VERIFY_ANGLES = tuple(range(-20, 21, 5))
+VERIFY_KEEP_FRAMES = 8
+VERIFY_WEIGHT = 0.25         # דגימת אימות שווה רבע מדגימת "הגשם התחיל אצלך"
+LEARN_ROT_PRIOR_N = 20
+LEARN_ROT_RANGE = (-15.0, 15.0)
+USER_MATCH_MIN = 30          # דיווח שלך עד 30 דקות מהתחלת הגשם במכ"ם = אותו אירוע
+
 # ------------------------------------------------------------------ Open-Meteo (תחזית)
 
 FORECAST_ENABLED = os.environ.get("FORECAST", "1") != "0"

@@ -334,6 +334,7 @@ class RunWatchTests(unittest.TestCase):
                         mock.patch.object(config, "TELEGRAM_CHAT_ID", "c"),
                         mock.patch.object(main, "OUT_DIR", os.path.join(self.dir, "out")),
                         mock.patch.object(main.forecast, "get_forecast", return_value=wet_forecast()),
+                        mock.patch.object(main.feedback, "poll", return_value=[]),
                         mock.patch.object(main.ims, "fetch_gauge", return_value=None),
                         mock.patch.object(main, "get_radar",
                                           return_value=(far_system(), [{"time": t} for t in TIMES], None))]
