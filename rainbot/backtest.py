@@ -62,6 +62,7 @@ def run(start, end, step=10, state=None, frames=None, log=print):
             alert_times = [learn.parse_ts(a["t"]) for a in state.get("alerts", [])]
             ev = learn.observe(state, fields[-1], t, alert_times)
             learn.record(state, res, t, sent)
+            learn.verify_step(state, fields[-1], t, res.get("motion"))
             nc = res.get("nowcast") or {}
             row = {"t": t.strftime("%m-%d %H:%M"), "stage": res["stage"], "src": res["src"], "eta": res["eta"],
                    "p": nc.get("p"), "at": learn.point_wet(fields[-1]), "sent": why if sent else None}

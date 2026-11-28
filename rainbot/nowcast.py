@@ -162,7 +162,8 @@ def _trace(wet, dbz, vxf, vyf, factor, rot, lead_min):
     return out
 
 
-def point_nowcast(cleaned, weights, times, gmotion, lead_min=MAX_LEAD_MIN, members=NC_MEMBERS, seed=7, spread=1.0):
+def point_nowcast(cleaned, weights, times, gmotion, lead_min=MAX_LEAD_MIN, members=NC_MEMBERS, seed=7, spread=1.0,
+                  rot_deg=0.0):
     """חיזוי לגבעה עצמה. cleaned: השדה הנקי של הפריים האחרון. מחזיר None אם אין תנועה אמינה, אחרת:
     {"p": סיכוי לגשם בתוך lead_min דקות, "eta": (p10, p90), "eta_mid": חציון, "dur": משך חציוני בדקות,
      "peak_dbz": עוצמה חציונית בחצי השעה הראשונה, "n": תרחישים, "blocks": אזורים עם תנועה מקומית}"""
@@ -177,14 +178,15 @@ def point_nowcast(cleaned, weights, times, gmotion, lead_min=MAX_LEAD_MIN, membe
         q *= 0.5
     sp_sig = (NC_SPEED_SIGMA + 0.25 * (1 - q)) * spread         # spread: כיול מהלמידה (learn.py)
     an_sig = math.radians(NC_ANGLE_SIGMA_DEG + 12.0 * (1 - q)) * spread
+    rot0 = math.radians(rot_deg)        # 3.2: סטייה קבועה בכיוון התנועה שנלמדה (verify.py)
     rng = np.random.default_rng(seed)
     onsets, durs, peaks = [], [], []
     for k in range(members):
         if k == 0:
-            f, r = 1.0, 0.0       # התרחיש הראשון: בלי שינוי
+            f, r = 1.0, rot0      # התרחיש הראשון: בלי שינוי (מלבד הסיבוב שנלמד)
         else:
             f = float(np.clip(rng.normal(1.0, sp_sig), 0.5, 1.6))
-            r = float(rng.normal(0.0, an_sig))
+            r = float(rng.normal(rot0, an_sig))
         tr = _trace(wet, dbz, vxf, vyf, f, r, lead_min)
         on = next((t for t, v in enumerate(tr, 1) if v), None)
         if on is None:
